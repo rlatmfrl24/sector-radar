@@ -59,7 +59,13 @@ export function priceBarsToSeriesRows(
 }
 
 export interface SectorMetricBuildOptions {
+  holdingCoverage?: {
+    date: string | null;
+    fresh: number;
+    total: number;
+  };
   partialHoldingRefresh?: boolean;
+  refreshPhase?: string;
 }
 
 export function buildSectorMetricRows(
@@ -104,6 +110,8 @@ export function buildSectorMetricRows(
       provider: "yahoo_finance",
       source: "yahoo_finance:chart",
       market_context_latest_date: latestMarketContextDate(marketContext),
+      refresh_phase: options.refreshPhase ?? null,
+      holding_coverage: options.holdingCoverage ?? null,
     };
 
     rows.push({

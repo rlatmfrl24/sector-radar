@@ -35,8 +35,11 @@ async function runRefresh(env: Env, now: Date): Promise<void> {
     concurrency: parseNumber(env.YAHOO_FETCH_CONCURRENCY, 2),
   });
   const interval = parseRefreshInterval(env.REFRESH_INTERVAL_MINUTES);
+  const legacyBudget = parseNumber(env.YAHOO_FETCH_BUDGET, 38);
   const outcome = await refreshMarketData(store, provider, {
-    fetchBudget: parseNumber(env.YAHOO_FETCH_BUDGET, 38),
+    coreFetchBudget: parseNumber(env.YAHOO_CORE_FETCH_BUDGET, legacyBudget),
+    enableIntradayCoreRefresh: parseBoolean(env.ENABLE_INTRADAY_CORE_REFRESH),
+    holdingFetchBudget: parseNumber(env.YAHOO_HOLDINGS_FETCH_BUDGET, legacyBudget),
     now,
     refreshIntervalMinutes: interval,
   });
@@ -51,4 +54,8 @@ function parseRefreshInterval(value: string | undefined): number {
 function parseNumber(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseBoolean(value: string | undefined): boolean {
+  return value === "1" || value?.toLowerCase() === "true";
 }

@@ -166,7 +166,7 @@ POST /api/refresh
 
 `GET /api/sectors` reads the latest `sector_metrics_daily` rows and returns the existing Sector Snapshot contract plus `data_connection`.
 
-`POST /api/refresh` is intentionally disabled on public Cloudflare Pages. It returns `refresh_unavailable_in_pages` because the Scheduled Worker owns Cloudflare refresh and enforces the upstream 15 minute gate.
+`POST /api/refresh` is intentionally disabled on public Cloudflare Pages. It returns `refresh_unavailable_in_pages` because the Scheduled Worker owns Cloudflare refresh and enforces the upstream refresh gate.
 
 ## 6. Scheduled Yahoo Research Ingestion
 
@@ -182,17 +182,20 @@ Configuration:
 ```jsonc
 {
   "triggers": {
-    "crons": ["*/15 * * * *"]
+    "crons": ["*/15 20-23 * * 1-5", "*/15 0-2 * * 2-6"]
   }
 }
 ```
 
-Cloudflare cron executes on UTC time. The UI converts timestamps to the user's local timezone and currently surfaces KST when the browser timezone is `Asia/Seoul`.
+Cloudflare cron executes on UTC time. The configured windows cover the US post-close period across daylight saving time. The Worker still makes the final decision using `America/New_York` market time, and skips external Yahoo calls outside the optimized windows. The UI converts timestamps to the user's local timezone and currently surfaces KST when the browser timezone is `Asia/Seoul`.
 
 The Worker:
 
 - fetches Yahoo chart daily data through a Worker-compatible adapter
-- keeps each cron run under the external fetch budget by fetching core ETFs first, Layer 2 proxies second, and a deterministic shard of representative holdings last
+- treats Layer 1 and Layer 3 as daily-close sector snapshots, not 15 minute intraday signals
+- runs a post-close core phase for benchmark, sector ETFs, and Layer 2 Yahoo proxies
+- runs later post-close holding phases for representative holdings only, so breadth coverage fills quickly without refetching core ETFs every time
+- skips Yahoo calls when core and representative holdings already have the latest daily close
 - fetches existing symbols incrementally and only missing symbols with full history, so one new holding does not force a full-year rewrite for every symbol
 - writes raw long-format rows to `series_daily`
 - computes RS/RRG, breadth, participation, and Layer 2 proxy context
@@ -206,10 +209,33 @@ Default ingestion vars:
 ```jsonc
 {
   "REFRESH_INTERVAL_MINUTES": "15",
+  "ENABLE_INTRADAY_CORE_REFRESH": "false",
+  "YAHOO_CORE_FETCH_BUDGET": "32",
   "YAHOO_FETCH_BUDGET": "38",
+  "YAHOO_HOLDINGS_FETCH_BUDGET": "38",
   "YAHOO_FETCH_CONCURRENCY": "2"
 }
 ```
+
+`YAHOO_FETCH_BUDGET` remains as a backward-compatible fallback. New deployments should tune
+`YAHOO_CORE_FETCH_BUDGET` and `YAHOO_HOLDINGS_FETCH_BUDGET` separately. Keeping intraday core
+refresh disabled is the default because the current metrics are daily OHLCV based:
+
+```text
+RS/RRG: 50D RS Ratio and 10D RS Momentum
+Breadth: 20/50/200D moving-average participation
+ETF participation: 20D RVOL, OBV slope, and CMF
+```
+
+Recommended operating model:
+
+| Phase | New York time | Yahoo symbols | Purpose |
+|---|---:|---|---|
+| post_close_core | 16:20-16:45 ET | SPY, sector ETFs, optional benchmark, Layer 2 Yahoo proxies | Daily Layer 1/3 snapshot base |
+| post_close_holdings | 16:45-20:00 ET | Representative holdings missing the latest close | Breadth shard fill and snapshot recompute |
+| off_window | all other times | none | Preserve last successful snapshot and write only run log skip entries |
+
+If an intraday preview is enabled later, keep it core-only and label it provisional in the UI.
 
 Yahoo host fallback uses `query2.finance.yahoo.com` first and `query1.finance.yahoo.com` second. Provider failure messages include host/status/body preview details so blocked Worker-origin requests can be diagnosed from `data_refresh_status.message`.
 

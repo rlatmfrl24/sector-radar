@@ -5,6 +5,8 @@ export type RefreshStatus =
   | "skipped_rate_limited"
   | "failed";
 
+export type RefreshOutcomeStatus = RefreshStatus | "skipped_market_schedule" | "skipped_up_to_date";
+
 export interface DataRefreshStatusRow {
   provider: string;
   status: RefreshStatus;
@@ -123,7 +125,7 @@ export interface RefreshStore {
 }
 
 export interface RefreshOutcome {
-  status: RefreshStatus;
+  status: RefreshOutcomeStatus;
   data_connection: {
     provider: string;
     mode: "live" | "stale" | "sample" | "read_only";

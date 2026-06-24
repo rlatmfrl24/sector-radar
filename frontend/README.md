@@ -63,14 +63,18 @@ scheduled ingest Worker from `wrangler.ingest.jsonc`.
 The deployed UI stays on Cloudflare Pages. Yahoo Finance research ingestion runs in a separate
 Scheduled Worker that writes snapshots into the same D1 database.
 
-The Worker keeps Yahoo requests below the Cloudflare Free plan subrequest limit by fetching core
-ETF symbols first, then Layer 2 proxies, then a deterministic shard of representative holdings.
+The Worker treats Layer 1 and Layer 3 as daily-close snapshots. It keeps Yahoo requests below the
+Cloudflare Free plan subrequest limit by separating the post-close core snapshot from later
+representative-holding breadth shards.
 Defaults live in `wrangler.ingest.jsonc`:
 
 ```jsonc
 {
   "REFRESH_INTERVAL_MINUTES": "15",
+  "ENABLE_INTRADAY_CORE_REFRESH": "false",
+  "YAHOO_CORE_FETCH_BUDGET": "32",
   "YAHOO_FETCH_BUDGET": "38",
+  "YAHOO_HOLDINGS_FETCH_BUDGET": "38",
   "YAHOO_FETCH_CONCURRENCY": "2"
 }
 ```
@@ -94,11 +98,20 @@ npm run cf:ingest:types
 npm run cf:ingest:dev
 ```
 
-4. Deploy the ingest Worker and its 15 minute UTC cron:
+4. Deploy the ingest Worker and its optimized post-close cron:
 
 ```bash
 npm run cf:ingest:deploy
 ```
+
+Cron runs are configured for the US post-close UTC window:
+
+```jsonc
+["*/15 20-23 * * 1-5", "*/15 0-2 * * 2-6"]
+```
+
+The Worker still checks `America/New_York` time internally. Outside the post-close core/holdings
+windows it records a skip run log and does not call Yahoo.
 
 ## Data Boundary
 

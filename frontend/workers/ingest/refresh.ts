@@ -3,27 +3,61 @@ import type {
   MarketDataProvider,
   ProviderFailure,
   ProviderFetchResult,
+  RefreshOutcomeStatus,
   RefreshOutcome,
   RefreshStatus,
   RefreshStore,
   SeriesRow,
 } from "./contracts";
 import { buildSectorMetricRows, priceBarsToSeriesRows, shouldSkipRateLimited } from "./engine";
-import { allSymbols, buildFetchSymbols, buildInstrumentRows, coreSymbols, hasPartialHoldingRefresh } from "./universe";
+import {
+  allSymbols,
+  buildCoreRefreshSymbols,
+  buildHoldingRefreshSymbols,
+  buildInstrumentRows,
+  coreSymbols,
+  representativeHoldingSymbols,
+} from "./universe";
 
 const SOURCE = "yahoo_finance:chart";
 const DEFAULT_REFRESH_INTERVAL_MINUTES = 15;
-const DEFAULT_FETCH_BUDGET = 38;
+const DEFAULT_CORE_FETCH_BUDGET = 32;
+const DEFAULT_HOLDING_FETCH_BUDGET = 38;
 const FIRST_RUN_RANGE = "1y";
 const INCREMENTAL_RANGE = "10d";
 const LOOKBACK_DAYS = 430;
 const RUN_TYPE = "cloudflare_yahoo_refresh";
+const MARKET_TIME_ZONE = "America/New_York";
+const POST_CLOSE_CORE_START_MINUTE = 16 * 60 + 20;
+const POST_CLOSE_CORE_END_MINUTE = 16 * 60 + 45;
+const POST_CLOSE_HOLDINGS_END_MINUTE = 20 * 60;
+const INTRADAY_CORE_MINUTES = new Set([10 * 60, 12 * 60, 14 * 60, 15 * 60 + 45]);
 
 export interface RefreshOptions {
+  coreFetchBudget?: number;
+  enableIntradayCoreRefresh?: boolean;
   fetchBudget?: number;
+  holdingFetchBudget?: number;
   now?: Date;
   refreshIntervalMinutes?: number;
 }
+
+interface RefreshExecutionPlan {
+  fetchSymbols: string[];
+  phase: "intraday_core" | "post_close_core" | "post_close_holdings";
+  marketDate: string;
+  message: string;
+  requireFetchedCore: boolean;
+}
+
+interface RefreshSkipPlan {
+  marketDate: string;
+  message: string;
+  phase: "off_window" | "up_to_date";
+  status: "skipped_market_schedule" | "skipped_up_to_date";
+}
+
+type RefreshPlan = RefreshExecutionPlan | RefreshSkipPlan;
 
 export async function refreshMarketData(
   store: RefreshStore,
@@ -32,9 +66,28 @@ export async function refreshMarketData(
 ): Promise<RefreshOutcome> {
   const now = options.now ?? new Date();
   const refreshIntervalMinutes = options.refreshIntervalMinutes ?? DEFAULT_REFRESH_INTERVAL_MINUTES;
-  const fetchBudget = normalizeFetchBudget(options.fetchBudget);
+  const coreFetchBudget = normalizeCoreFetchBudget(options.coreFetchBudget ?? options.fetchBudget);
+  const holdingFetchBudget = normalizeHoldingFetchBudget(options.holdingFetchBudget ?? options.fetchBudget);
   const attemptedAt = toIso(now);
   const existing = await store.readStatus(provider.name);
+  const lookbackStart = toDate(addDays(now, -LOOKBACK_DAYS));
+  const plan = await buildRefreshPlan(store, now, lookbackStart, {
+    coreFetchBudget,
+    enableIntradayCoreRefresh: Boolean(options.enableIntradayCoreRefresh),
+    holdingFetchBudget,
+  });
+
+  if ("status" in plan) {
+    await store.upsertRunLog({
+      run_id: buildRunId(provider.name, attemptedAt),
+      run_type: RUN_TYPE,
+      started_at: attemptedAt,
+      finished_at: toIso(new Date()),
+      status: plan.status,
+      message: plan.message,
+    });
+    return skippedOutcome(plan.status, provider.name, existing, plan.message, refreshIntervalMinutes);
+  }
 
   if (shouldSkipRateLimited(existing?.next_allowed_at, now)) {
     const skipped = {
@@ -56,11 +109,9 @@ export async function refreshMarketData(
   }
 
   const symbols = allSymbols();
-  const fetchSymbols = buildFetchSymbols(now, fetchBudget);
-  const lookbackStart = toDate(addDays(now, -LOOKBACK_DAYS));
+  const fetchSymbols = plan.fetchSymbols;
   const preFetchRows = await store.readSeries(fetchSymbols, lookbackStart);
   const fetchPlan = buildFetchPlan(fetchSymbols, preFetchRows);
-  const partialHoldingRefresh = hasPartialHoldingRefresh(fetchSymbols);
   const runId = buildRunId(provider.name, attemptedAt);
   const staleRecoveryMessage = isStaleRefreshing(existing, now)
     ? ` Previous refresh from ${existing?.last_attempt_at ?? "unknown"} did not finalize and will be recovered.`
@@ -69,7 +120,7 @@ export async function refreshMarketData(
     ? `${staleRecoveryMessage.trim()} `
     : "";
   const startMessage =
-    `Cloudflare cron refresh is collecting ${fetchSymbols.length}/${symbols.length} Yahoo symbols.` +
+    `Cloudflare ${plan.phase} refresh is collecting ${fetchSymbols.length}/${symbols.length} Yahoo symbols for ${plan.marketDate}.` +
     ` ${formatFetchPlan(fetchPlan)}.${staleRecoveryMessage}`;
 
   await store.upsertRunLog({
@@ -93,9 +144,9 @@ export async function refreshMarketData(
   try {
     await store.upsertInstruments(buildInstrumentRows());
     const fetched = await fetchByPlan(provider, fetchPlan);
-    const missingCore = coreSymbols().filter(
-      (symbol) => !fetched.bars.some((bar) => bar.symbol.toUpperCase() === symbol),
-    );
+    const missingCore = plan.requireFetchedCore
+      ? coreSymbols().filter((symbol) => !fetched.bars.some((bar) => bar.symbol.toUpperCase() === symbol))
+      : [];
 
     if (missingCore.length > 0) {
       throw new Error(
@@ -106,8 +157,12 @@ export async function refreshMarketData(
     const rows = priceBarsToSeriesRows(fetched.bars, SOURCE, attemptedAt);
     const rowsUpserted = await store.upsertSeries(rows);
     const historicalRows = await store.readSeries(symbols, lookbackStart);
+    const latestCoreDate = latestCommonCloseDate(historicalRows, coreSymbols());
+    const holdingCoverage = holdingFreshnessCoverage(historicalRows, latestCoreDate);
     const metricRows = buildSectorMetricRows(historicalRows, attemptedAt, {
-      partialHoldingRefresh,
+      holdingCoverage,
+      partialHoldingRefresh: holdingCoverage.fresh < holdingCoverage.total,
+      refreshPhase: plan.phase,
     });
 
     if (metricRows.length === 0) {
@@ -121,7 +176,8 @@ export async function refreshMarketData(
       fetchedFailures: fetched.failures,
       fetchPlan,
       fetchSymbols,
-      partialHoldingRefresh,
+      holdingCoverage,
+      phase: plan.phase,
       totalSymbols: symbols.length,
     });
     finalStatus = {
@@ -164,6 +220,135 @@ interface FetchPlanItem {
   symbols: string[];
 }
 
+interface PlanOptions {
+  coreFetchBudget: number;
+  enableIntradayCoreRefresh: boolean;
+  holdingFetchBudget: number;
+}
+
+interface MarketWindow {
+  date: string;
+  minute: number;
+  phase: "intraday_core" | "post_close_core" | "post_close_holdings" | "off_window";
+  weekday: number;
+}
+
+interface HoldingCoverage {
+  date: string | null;
+  fresh: number;
+  total: number;
+}
+
+async function buildRefreshPlan(
+  store: RefreshStore,
+  now: Date,
+  lookbackStart: string,
+  options: PlanOptions,
+): Promise<RefreshPlan> {
+  const window = classifyMarketWindow(now, options.enableIntradayCoreRefresh);
+  if (window.phase === "off_window") {
+    return {
+      marketDate: window.date,
+      message:
+        `Skipped Yahoo refresh outside optimized US market windows. ` +
+        `Current ${MARKET_TIME_ZONE} minute=${window.minute}; cron is reserved for post-close daily snapshots and holding shards.`,
+      phase: "off_window",
+      status: "skipped_market_schedule",
+    };
+  }
+
+  const coreRows = await store.readSeries(coreSymbols(), lookbackStart);
+  const latestCoreDate = latestCommonCloseDate(coreRows, coreSymbols());
+  const coreLooksFresh = latestCoreDate !== null && latestCoreDate >= window.date;
+
+  if (window.phase === "intraday_core" || window.phase === "post_close_core" || !coreLooksFresh) {
+    const reason = !coreLooksFresh && window.phase === "post_close_holdings" ? "core catch-up" : window.phase;
+    return {
+      fetchSymbols: buildCoreRefreshSymbols(options.coreFetchBudget),
+      marketDate: window.date,
+      message: `Fetch ${reason} symbols for ${window.date}.`,
+      phase: window.phase === "intraday_core" ? "intraday_core" : "post_close_core",
+      requireFetchedCore: true,
+    };
+  }
+
+  const missingHoldings = await missingHoldingSymbolsForDate(store, latestCoreDate, options.holdingFetchBudget);
+  if (missingHoldings.length === 0) {
+    return {
+      marketDate: window.date,
+      message:
+        `Skipped Yahoo refresh because core symbols and representative holdings already have close data for ${latestCoreDate}.`,
+      phase: "up_to_date",
+      status: "skipped_up_to_date",
+    };
+  }
+
+  return {
+    fetchSymbols: buildHoldingRefreshSymbols(now, options.holdingFetchBudget, missingHoldings),
+    marketDate: window.date,
+    message: `Fetch representative holding shard for ${latestCoreDate}.`,
+    phase: "post_close_holdings",
+    requireFetchedCore: false,
+  };
+}
+
+function classifyMarketWindow(now: Date, enableIntradayCoreRefresh: boolean): MarketWindow {
+  const clock = newYorkClock(now);
+  const isWeekday = clock.weekday >= 1 && clock.weekday <= 5;
+  let phase: MarketWindow["phase"] = "off_window";
+
+  if (isWeekday && enableIntradayCoreRefresh && INTRADAY_CORE_MINUTES.has(clock.minute)) {
+    phase = "intraday_core";
+  } else if (isWeekday && clock.minute >= POST_CLOSE_CORE_START_MINUTE && clock.minute < POST_CLOSE_CORE_END_MINUTE) {
+    phase = "post_close_core";
+  } else if (isWeekday && clock.minute >= POST_CLOSE_CORE_END_MINUTE && clock.minute < POST_CLOSE_HOLDINGS_END_MINUTE) {
+    phase = "post_close_holdings";
+  }
+
+  return {
+    date: clock.date,
+    minute: clock.minute,
+    phase,
+    weekday: clock.weekday,
+  };
+}
+
+function newYorkClock(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    month: "2-digit",
+    timeZone: MARKET_TIME_ZONE,
+    weekday: "short",
+    year: "numeric",
+  }).formatToParts(date);
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const hour = Number(byType.hour) % 24;
+  const minute = hour * 60 + Number(byType.minute);
+  return {
+    date: `${byType.year}-${byType.month}-${byType.day}`,
+    minute,
+    weekday: weekdayNumber(String(byType.weekday)),
+  };
+}
+
+function weekdayNumber(value: string) {
+  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(value);
+}
+
+async function missingHoldingSymbolsForDate(store: RefreshStore, date: string, budget: number) {
+  const holdings = representativeHoldingSymbols();
+  const rows = await store.readSeries(holdings, date);
+  const fresh = new Set(
+    rows
+      .filter((row) => row.field === "close" && row.date === date)
+      .map((row) => row.series_id.toUpperCase()),
+  );
+  return holdings.filter((symbol) => !fresh.has(symbol)).slice(0, Math.max(1, budget * 3));
+}
+
 function buildFetchPlan(fetchSymbols: string[], rows: SeriesRow[]): FetchPlanItem[] {
   const symbolsWithClose = new Set(
     rows.filter((row) => row.field === "close").map((row) => row.series_id.toUpperCase()),
@@ -195,17 +380,24 @@ function buildSuccessMessage({
   fetchedFailures,
   fetchPlan,
   fetchSymbols,
-  partialHoldingRefresh,
+  holdingCoverage,
+  phase,
   totalSymbols,
 }: {
   fetchedFailures: ProviderFailure[];
   fetchPlan: FetchPlanItem[];
   fetchSymbols: string[];
-  partialHoldingRefresh: boolean;
+  holdingCoverage: HoldingCoverage;
+  phase: RefreshExecutionPlan["phase"];
   totalSymbols: number;
 }) {
-  const base = `Yahoo refresh completed for ${fetchSymbols.length}/${totalSymbols} symbols with ranges ${formatFetchPlan(fetchPlan)}.`;
-  const shard = partialHoldingRefresh ? " Representative holdings are being refreshed by deterministic shard." : "";
+  const base = `Yahoo ${phase} refresh completed for ${fetchSymbols.length}/${totalSymbols} symbols with ranges ${formatFetchPlan(fetchPlan)}.`;
+  const shard =
+    holdingCoverage.fresh < holdingCoverage.total
+      ? ` Representative holdings coverage ${holdingCoverage.fresh}/${holdingCoverage.total}` +
+        `${holdingCoverage.date ? ` for ${holdingCoverage.date}` : ""}; deterministic shard will continue.`
+      : ` Representative holdings coverage ${holdingCoverage.fresh}/${holdingCoverage.total}` +
+        `${holdingCoverage.date ? ` for ${holdingCoverage.date}` : ""}.`;
   const failures =
     fetchedFailures.length > 0
       ? ` Non-core warnings: ${fetchedFailures.length}. ${formatFailures(fetchedFailures)}`
@@ -239,9 +431,42 @@ function formatFailures(failures: ProviderFailure[], symbols?: string[]) {
   return details || "No provider failure details were returned.";
 }
 
-function normalizeFetchBudget(value: number | undefined) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_FETCH_BUDGET;
+function latestCommonCloseDate(rows: SeriesRow[], symbols: string[]) {
+  const latestBySymbol = new Map<string, string>();
+  const expected = new Set(symbols.map((symbol) => symbol.toUpperCase()));
+  for (const row of rows) {
+    const symbol = row.series_id.toUpperCase();
+    if (row.field !== "close" || !expected.has(symbol)) continue;
+    const current = latestBySymbol.get(symbol);
+    if (!current || row.date > current) latestBySymbol.set(symbol, row.date);
+  }
+  if (latestBySymbol.size < expected.size) return null;
+  return [...latestBySymbol.values()].sort()[0] ?? null;
+}
+
+function holdingFreshnessCoverage(rows: SeriesRow[], date: string | null): HoldingCoverage {
+  const holdings = representativeHoldingSymbols();
+  if (!date) return { date: null, fresh: 0, total: holdings.length };
+  const fresh = new Set(
+    rows
+      .filter((row) => row.field === "close" && row.date === date)
+      .map((row) => row.series_id.toUpperCase()),
+  );
+  return {
+    date,
+    fresh: holdings.filter((symbol) => fresh.has(symbol)).length,
+    total: holdings.length,
+  };
+}
+
+function normalizeCoreFetchBudget(value: number | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_CORE_FETCH_BUDGET;
   return Math.min(45, Math.max(coreSymbols().length, Math.floor(value)));
+}
+
+function normalizeHoldingFetchBudget(value: number | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_HOLDING_FETCH_BUDGET;
+  return Math.min(45, Math.max(1, Math.floor(value)));
 }
 
 function baseStatus(provider: string, existing: DataRefreshStatusRow | null | undefined): DataRefreshStatusRow {
@@ -274,6 +499,23 @@ function outcome(row: DataRefreshStatusRow, refreshIntervalMinutes: number): Ref
       rows_upserted: row.rows_upserted,
       manual_refresh_available: false,
       message: row.message ?? undefined,
+    },
+  };
+}
+
+function skippedOutcome(
+  status: RefreshOutcomeStatus,
+  provider: string,
+  existing: DataRefreshStatusRow | null | undefined,
+  message: string,
+  refreshIntervalMinutes: number,
+): RefreshOutcome {
+  const connection = outcome(baseStatus(provider, existing), refreshIntervalMinutes).data_connection;
+  return {
+    status,
+    data_connection: {
+      ...connection,
+      message,
     },
   };
 }

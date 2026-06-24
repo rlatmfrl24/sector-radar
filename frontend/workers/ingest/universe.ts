@@ -190,6 +190,19 @@ export function buildFetchSymbols(now: Date, budget: number): string[] {
   return uniqueSymbols([...required, ...orderedHoldings]).slice(0, budget);
 }
 
+export function buildCoreRefreshSymbols(budget: number): string[] {
+  const required = uniqueSymbols([...coreSymbols(), ...OPTIONAL_BENCHMARKS, ...layerTwoYahooSymbols()]);
+  return required.slice(0, Math.max(coreSymbols().length, budget));
+}
+
+export function buildHoldingRefreshSymbols(now: Date, budget: number, candidates = representativeHoldingSymbols()): string[] {
+  const holdings = uniqueSymbols(candidates);
+  if (holdings.length === 0) return [];
+  const shardStart = Math.floor(now.getTime() / (15 * 60_000)) % holdings.length;
+  const orderedHoldings = [...holdings.slice(shardStart), ...holdings.slice(0, shardStart)];
+  return orderedHoldings.slice(0, Math.max(0, budget));
+}
+
 export function hasPartialHoldingRefresh(fetchSymbols: string[]): boolean {
   const fetched = new Set(fetchSymbols);
   return representativeHoldingSymbols().some((symbol) => !fetched.has(symbol));

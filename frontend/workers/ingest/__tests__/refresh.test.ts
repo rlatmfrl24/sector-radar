@@ -13,7 +13,7 @@ import type {
 import { buildSectorMetricRows, priceBarsToSeriesRows } from "../engine";
 import { YahooChartProvider } from "../providers";
 import { refreshMarketData } from "../refresh";
-import { allSymbols, buildFetchSymbols, coreSymbols } from "../universe";
+import { allSymbols, buildCoreRefreshSymbols, coreSymbols } from "../universe";
 
 class FakeProvider implements MarketDataProvider {
   readonly name = "yahoo_finance";
@@ -84,10 +84,10 @@ describe("Cloudflare ingest refresh", () => {
   });
 
   it("plans core symbols first and stays within the Yahoo fetch budget", () => {
-    const planned = buildFetchSymbols(new Date("2026-06-24T00:00:00Z"), 38);
+    const planned = buildCoreRefreshSymbols(32);
 
     expect(planned.slice(0, coreSymbols().length)).toEqual(coreSymbols());
-    expect(planned.length).toBeLessThanOrEqual(38);
+    expect(planned.length).toBeLessThanOrEqual(32);
   });
 
   it("upserts Yahoo bars and sector snapshots without exposing probability", async () => {
@@ -95,13 +95,13 @@ describe("Cloudflare ingest refresh", () => {
     const provider = new FakeProvider(makeBars(allSymbols(), 260));
 
     const result = await refreshMarketData(store, provider, {
-      now: new Date("2026-06-24T00:00:00Z"),
+      now: new Date("2026-06-23T20:30:00Z"),
       refreshIntervalMinutes: 15,
     });
 
     expect(result.status).toBe("success");
     expect(provider.calls).toBe(1);
-    expect(provider.lastSymbols.length).toBeLessThanOrEqual(38);
+    expect(provider.lastSymbols.length).toBeLessThanOrEqual(32);
     expect([...store.runLogs.values()].at(-1)?.status).toBe("success");
     expect(store.series.size).toBeGreaterThan(0);
     expect(store.metrics.size).toBeGreaterThanOrEqual(10);
@@ -117,18 +117,33 @@ describe("Cloudflare ingest refresh", () => {
     const provider = new FakeProvider(makeBars(allSymbols(), 260));
 
     await refreshMarketData(store, provider, {
-      now: new Date("2026-06-24T00:00:00Z"),
+      now: new Date("2026-06-23T20:30:00Z"),
       refreshIntervalMinutes: 15,
     });
     const second = await refreshMarketData(store, provider, {
-      now: new Date("2026-06-24T00:05:00Z"),
+      now: new Date("2026-06-23T20:35:00Z"),
       refreshIntervalMinutes: 15,
     });
 
     expect(second.status).toBe("skipped_rate_limited");
     expect(provider.calls).toBe(1);
-    expect(store.status?.last_attempt_at).toBe("2026-06-24T00:05:00+00:00");
+    expect(store.status?.last_attempt_at).toBe("2026-06-23T20:35:00+00:00");
     expect([...store.runLogs.values()].at(-1)?.status).toBe("skipped_rate_limited");
+  });
+
+  it("skips Yahoo calls outside optimized market refresh windows", async () => {
+    const store = new MemoryRefreshStore();
+    const provider = new FakeProvider(makeBars(allSymbols(), 260));
+
+    const result = await refreshMarketData(store, provider, {
+      now: new Date("2026-06-23T18:00:00Z"),
+      refreshIntervalMinutes: 15,
+    });
+
+    expect(result.status).toBe("skipped_market_schedule");
+    expect(provider.calls).toBe(0);
+    expect(store.status).toBeNull();
+    expect([...store.runLogs.values()].at(-1)?.status).toBe("skipped_market_schedule");
   });
 
   it("recovers stale refreshing status and continues with the next cron run", async () => {
@@ -136,9 +151,9 @@ describe("Cloudflare ingest refresh", () => {
     store.status = {
       provider: "yahoo_finance",
       status: "refreshing",
-      last_attempt_at: "2026-06-24T00:00:00+00:00",
-      last_success_at: "2026-06-23T23:45:00+00:00",
-      next_allowed_at: "2026-06-24T00:15:00+00:00",
+      last_attempt_at: "2026-06-23T20:30:00+00:00",
+      last_success_at: "2026-06-22T20:45:00+00:00",
+      next_allowed_at: "2026-06-23T20:45:00+00:00",
       latest_price_date: "2026-06-23",
       symbol_count: 38,
       rows_upserted: 0,
@@ -147,7 +162,7 @@ describe("Cloudflare ingest refresh", () => {
     const provider = new FakeProvider(makeBars(allSymbols(), 260));
 
     const result = await refreshMarketData(store, provider, {
-      now: new Date("2026-06-24T00:30:00Z"),
+      now: new Date("2026-06-23T21:00:00Z"),
       refreshIntervalMinutes: 15,
     });
 
@@ -158,8 +173,8 @@ describe("Cloudflare ingest refresh", () => {
   });
 
   it("fetches existing symbols incrementally and only missing symbols with full history", async () => {
-    const now = new Date("2026-06-24T00:00:00Z");
-    const planned = buildFetchSymbols(now, 38);
+    const now = new Date("2026-06-23T20:30:00Z");
+    const planned = buildCoreRefreshSymbols(32);
     const missingSymbol = planned.at(-1)!;
     const store = new MemoryRefreshStore();
     await store.upsertSeries(
@@ -182,8 +197,45 @@ describe("Cloudflare ingest refresh", () => {
     expect(provider.requests[0]?.range).toBe("10d");
     expect(provider.requests[0]?.symbols).not.toContain(missingSymbol);
     expect(provider.requests[1]).toEqual({ range: "1y", symbols: [missingSymbol] });
-    expect(store.status?.message).toContain("37 10d");
+    expect(store.status?.message).toContain(`${planned.length - 1} 10d`);
     expect(store.status?.message).toContain("1 1y");
+  });
+
+  it("uses the post-close holdings window for representative holding shards only", async () => {
+    const store = new MemoryRefreshStore();
+    await store.upsertSeries(
+      priceBarsToSeriesRows(makeBars(coreSymbols(), 260), "fixture", "2026-06-23T20:30:00+00:00"),
+    );
+    const provider = new FakeProvider(makeBars(allSymbols(), 260));
+
+    const result = await refreshMarketData(store, provider, {
+      holdingFetchBudget: 38,
+      now: new Date("2026-06-23T21:00:00Z"),
+      refreshIntervalMinutes: 15,
+    });
+
+    expect(result.status).toBe("success");
+    expect(provider.calls).toBe(1);
+    expect(provider.lastSymbols).not.toContain("SPY");
+    expect(provider.lastSymbols.length).toBeLessThanOrEqual(38);
+    expect(store.status?.message).toContain("post_close_holdings");
+  });
+
+  it("skips the holdings window when core and holdings already have the latest daily close", async () => {
+    const store = new MemoryRefreshStore();
+    await store.upsertSeries(
+      priceBarsToSeriesRows(makeBars(allSymbols(), 260), "fixture", "2026-06-23T20:30:00+00:00"),
+    );
+    const provider = new FakeProvider(makeBars(allSymbols(), 260));
+
+    const result = await refreshMarketData(store, provider, {
+      now: new Date("2026-06-23T21:00:00Z"),
+      refreshIntervalMinutes: 15,
+    });
+
+    expect(result.status).toBe("skipped_up_to_date");
+    expect(provider.calls).toBe(0);
+    expect(store.status).toBeNull();
   });
 
   it("succeeds when core symbols are present and non-core symbols fail", async () => {
@@ -195,7 +247,7 @@ describe("Cloudflare ingest refresh", () => {
 
     const result = await refreshMarketData(store, provider, {
       fetchBudget: 38,
-      now: new Date("2026-06-24T00:00:00Z"),
+      now: new Date("2026-06-23T20:30:00Z"),
       refreshIntervalMinutes: 15,
     });
 
@@ -217,12 +269,12 @@ describe("Cloudflare ingest refresh", () => {
 
     const result = await refreshMarketData(store, provider, {
       fetchBudget: 38,
-      now: new Date("2026-06-24T00:00:00Z"),
+      now: new Date("2026-06-23T20:30:00Z"),
       refreshIntervalMinutes: 15,
     });
 
     expect(result.status).toBe("failed");
-    expect(store.status?.symbol_count).toBe(38);
+    expect(store.status?.symbol_count).toBe(buildCoreRefreshSymbols(38).length);
     expect(store.status?.message).toContain("Core Yahoo symbols failed");
     expect(store.status?.message).toContain("HTTP 403");
     expect([...store.runLogs.values()].at(-1)?.status).toBe("failed");
@@ -277,7 +329,7 @@ describe("Cloudflare ingest refresh", () => {
 });
 
 function makeBars(symbols: string[], count: number): PriceBar[] {
-  const start = Date.UTC(2025, 5, 1);
+  const start = Date.UTC(2025, 9, 7);
   const bars: PriceBar[] = [];
   symbols.forEach((symbol, symbolIndex) => {
     for (let index = 0; index < count; index += 1) {

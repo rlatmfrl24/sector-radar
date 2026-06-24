@@ -5,7 +5,7 @@
   "compatibility_date": "2026-06-24",
   "compatibility_flags": ["nodejs_compat"],
   "triggers": {
-    "crons": ["*/15 * * * *"]
+    "crons": ["*/15 20-23 * * 1-5", "*/15 0-2 * * 2-6"]
   },
   "observability": {
     "enabled": true,
@@ -13,7 +13,10 @@
   },
   "vars": {
     "REFRESH_INTERVAL_MINUTES": "15",
+    "ENABLE_INTRADAY_CORE_REFRESH": "false",
+    "YAHOO_CORE_FETCH_BUDGET": "32",
     "YAHOO_FETCH_BUDGET": "38",
+    "YAHOO_HOLDINGS_FETCH_BUDGET": "38",
     "YAHOO_FETCH_CONCURRENCY": "2"
   },
   "d1_databases": [
