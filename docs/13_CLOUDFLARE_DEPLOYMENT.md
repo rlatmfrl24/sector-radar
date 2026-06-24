@@ -78,7 +78,7 @@ Vite build
 ```text
 npm run test:worker
 npm run build
-wrangler pages deploy dist --project-name=sector-radar
+wrangler pages deploy dist --project-name=sector-radar --branch=production
 wrangler deploy --config wrangler.ingest.jsonc
 ```
 

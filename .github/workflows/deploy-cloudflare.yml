@@ -46,7 +46,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: frontend
-          command: pages deploy dist --project-name=sector-radar
+          command: pages deploy dist --project-name=sector-radar --branch=production
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Deploy ingest Worker
