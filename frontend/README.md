@@ -43,35 +43,20 @@ npm run build
 npm run cf:dev
 ```
 
-5. Deploy manually only when you intentionally want Direct Upload:
+5. Deploy manually when needed:
 
 ```bash
 npm run cf:deploy
 ```
 
-Production Pages deployment should normally use Cloudflare Pages Git integration instead:
+Production deployment normally runs from GitHub Actions on every `main` push:
 
 ```text
-Repository: rlatmfrl24/sector-radar
-Production branch: main
-Root directory: frontend
-Build command: npm run build
-Build output directory: dist
+.github/workflows/deploy-cloudflare.yml
 ```
 
-With that setup, every push to `main` lets Cloudflare build and deploy the dashboard without
-GitHub Actions.
-
-The scheduled ingest Worker is a separate Cloudflare Worker. To deploy it without GitHub Actions,
-connect `sector-radar-ingest` to the same repository with Cloudflare Workers Builds:
-
-```text
-Repository: rlatmfrl24/sector-radar
-Git branch: main
-Root directory: frontend
-Build command: npm run typecheck:worker && npm run test:worker
-Deploy command: npm run cf:ingest:deploy
-```
+The workflow builds the Vite dashboard, deploys `dist` to Cloudflare Pages, then deploys the
+scheduled ingest Worker from `wrangler.ingest.jsonc`.
 
 ## Cloudflare Scheduled Ingestion
 

@@ -54,91 +54,87 @@ npm run dev
 npm run build
 ```
 
-## 3.1 Cloudflare Pages Git Integration
+## 3.1 GitHub Actions Deployment
 
-The frontend deployment target is Cloudflare Pages Git integration, not GitHub Actions.
-
-```text
-GitHub main branch
-  -> Cloudflare Pages Git integration
-  -> Cloudflare Pages build
-  -> Pages Functions + static assets
-```
-
-Current build settings for Cloudflare Pages:
+The repository uses GitHub Actions for reproducible validation and Cloudflare deployment:
 
 ```text
-Production branch: main
-Root directory: frontend
-Build command: npm run build
-Build output directory: dist
+.github/workflows/ci.yml
+.github/workflows/deploy-cloudflare.yml
 ```
 
-The existing `sector-radar` Pages project was originally created as a Direct Upload project
-(`Git Provider = No` in `wrangler pages project list`). To make Cloudflare build the repository
-directly on every `main` push, connect the GitHub repository in the Cloudflare dashboard:
+`ci.yml` runs on pull requests, pushes to `main`, and manual dispatch:
 
 ```text
-Workers & Pages
-  -> sector-radar
-  -> Settings
-  -> Builds
-  -> Git Repository / Connect Git
-  -> rlatmfrl24/sector-radar
-  -> Production branch: main
-  -> Root directory: frontend
-  -> Build command: npm run build
-  -> Build output directory: dist
+Python 3.11 tests
+Frontend dependency install
+Worker typecheck
+Worker unit tests
+Vite build
 ```
 
-If Cloudflare does not offer "Connect Git" on the existing Direct Upload project, create a new
-Pages project through "Create application -> Pages -> Connect to Git" with the same settings, then
-move the production/custom domain to that Git-integrated project. The Scheduled Worker and D1
-database can stay unchanged.
+`deploy-cloudflare.yml` runs on pushes to `main` and manual dispatch:
 
-Cloudflare Pages Git integration automatically builds and deploys when `main` receives a commit.
-GitHub Actions secrets are not required for Pages deployment.
-
-Local validation remains:
-
-```bash
-cd frontend
-npm run typecheck:worker
+```text
 npm run test:worker
 npm run build
+wrangler pages deploy dist --project-name=sector-radar
+wrangler deploy --config wrangler.ingest.jsonc
 ```
 
-Scheduled Worker deployment is still separate from Pages Git integration. Cloudflare Pages Git
-integration builds the dashboard only; it does not deploy the cron Worker.
-
-To also deploy the cron Worker without GitHub Actions, connect the existing
-`sector-radar-ingest` Worker to the same GitHub repository through Cloudflare Workers Builds:
+Required GitHub repository secrets:
 
 ```text
-Workers & Pages
-  -> sector-radar-ingest
-  -> Settings
-  -> Builds
-  -> Connect
-  -> Repository: rlatmfrl24/sector-radar
-  -> Git branch: main
-  -> Root directory: frontend
-  -> Build command: npm run typecheck:worker && npm run test:worker
-  -> Deploy command: npm run cf:ingest:deploy
+CLOUDFLARE_ACCOUNT_ID
+CLOUDFLARE_API_TOKEN
 ```
 
-The Worker name in Cloudflare must match `name` in `frontend/wrangler.ingest.jsonc`:
+`CLOUDFLARE_API_TOKEN` must never be committed. Create it in the Cloudflare dashboard and store it
+only as a GitHub Actions secret.
+
+Recommended token setup for this project:
 
 ```text
-sector-radar-ingest
+Dashboard
+  -> My Profile
+  -> API Tokens
+  -> Create Token
+  -> Start from "Edit Cloudflare Workers" template or create a custom token
+
+Permissions:
+  Account / Account Settings / Read
+  Account / Cloudflare Pages / Edit
+  Account / Workers Scripts / Edit
+  Account / D1 / Edit
+
+Account resources:
+  Include / 397love@gmail.com's Account
+
+Zone resources:
+  Include / All zones
 ```
 
-If Workers Builds is not connected, deploy the Worker with Wrangler when
-`frontend/workers/ingest/` or `frontend/wrangler.ingest.jsonc` changes:
+The `Edit Cloudflare Workers` template is the closest preset for Wrangler-based Worker deployment.
+Add `Cloudflare Pages / Edit` so `wrangler pages deploy` can publish the dashboard, and add `D1 / Edit`
+so the Worker deployment can keep the existing D1 binding stable.
+
+After the token is created, add or update GitHub repository secrets:
+
+```bash
+gh secret set CLOUDFLARE_ACCOUNT_ID --repo rlatmfrl24/sector-radar --body "46e1801b290196fbec7cfae87710ffcf"
+gh secret set CLOUDFLARE_API_TOKEN --repo rlatmfrl24/sector-radar --body "<PASTE_TOKEN_HERE>"
+```
+
+This project intentionally keeps the existing Cloudflare Pages Direct Upload boundary. Direct upload
+via GitHub Actions keeps Pages and the Scheduled Worker in one reviewed pipeline.
+
+Worker checks:
 
 ```bash
 cd frontend
-npm run cf:ingest:deploy
+npm run cf:ingest:types
+npm run typecheck:worker
+npm run test:worker
 ```
 
 ## 4. D1 Setup
