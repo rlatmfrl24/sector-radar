@@ -1,0 +1,33 @@
+relative_strength:
+  rs_window: 50
+  momentum_window: 10
+  strong_threshold: 102.0
+  weak_threshold: 98.0
+  momentum_strengthening_threshold: 101.0
+  momentum_weakening_threshold: 99.0
+
+breadth:
+  ma_windows: [20, 50, 200]
+  broad_strength_pct_50ma: 0.70
+  healthy_pct_50ma: 0.55
+  narrow_pct_50ma: 0.40
+  breakdown_pct_200ma: 0.35
+  transition_window: 10
+
+participation:
+  rvol_window: 20
+  rvol_accumulation: 1.20
+  cmf_window: 20
+  cmf_positive: 0.05
+  obv_slope_window: 20
+
+rulebook:
+  max_unknown_modules_for_high_conviction: 1
+  strength_max: 4
+  false_leadership_strength_cap: 2
+  participation_breakdown_conviction_cap: medium
+  data_insufficient_conviction_cap: low
+
+validation:
+  forward_windows: [20, 60]
+  expose_probability_before_validation: false

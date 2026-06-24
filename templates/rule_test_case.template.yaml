@@ -1,0 +1,24 @@
+name: Strong Leader fixture
+input:
+  relative_strength:
+    state: strong
+    transition: strengthening
+  momentum:
+    state: improving
+    transition: strengthening
+  breadth:
+    state: healthy
+    transition: strengthening
+  participation:
+    state: confirmed
+    transition: stable
+  catalyst:
+    state: positive
+    transition: strengthening
+expected:
+  lead_pattern: Strong Leader
+  direction: strong_up
+  conviction_label: high
+  required_risks:
+    - Momentum 둔화
+    - Breadth 악화

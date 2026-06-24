@@ -1,0 +1,25 @@
+as_of: 2026-06-23
+catalysts:
+  - catalyst_id: SMH_2026_AI_CAPEX
+    sector_code: SMH
+    catalyst_type: structural
+    title: AI CAPEX cycle
+    description: 데이터센터와 AI 인프라 투자 확대가 반도체 수요를 지지한다는 수동 테제.
+    state: positive
+    transition: strengthening
+    confidence: high
+    source_note: manual thesis
+    effective_from: 2026-01-01
+    effective_to: null
+
+  - catalyst_id: XLU_2026_RATE_SENSITIVITY
+    sector_code: XLU
+    catalyst_type: policy
+    title: Interest-rate sensitivity
+    description: 금리 방향에 따라 유틸리티 섹터의 상대 매력이 변할 수 있음.
+    state: neutral
+    transition: stable
+    confidence: medium
+    source_note: manual thesis
+    effective_from: 2026-01-01
+    effective_to: null

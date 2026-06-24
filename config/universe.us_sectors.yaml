@@ -1,0 +1,174 @@
+market: US
+benchmark: SPY
+optional_benchmarks:
+  - QQQ
+
+sectors:
+  XLK:
+    name: Technology
+    group: risk_on
+    representative_holdings:
+      - AAPL
+      - MSFT
+      - NVDA
+      - AVGO
+      - ORCL
+      - AMD
+      - CRM
+      - ADBE
+      - CSCO
+      - ACN
+  SMH:
+    name: Semiconductors
+    group: risk_on
+    representative_holdings:
+      - NVDA
+      - TSM
+      - AVGO
+      - ASML
+      - AMD
+      - MU
+      - AMAT
+      - LRCX
+      - KLAC
+      - MRVL
+  XLF:
+    name: Financials
+    group: risk_on
+    representative_holdings:
+      - BRK-B
+      - JPM
+      - BAC
+      - WFC
+      - GS
+      - MS
+      - C
+      - BLK
+      - AXP
+      - SPGI
+  XLY:
+    name: Consumer Discretionary
+    group: risk_on
+    representative_holdings:
+      - AMZN
+      - TSLA
+      - HD
+      - MCD
+      - NKE
+      - SBUX
+      - LOW
+      - BKNG
+      - TJX
+      - CMG
+  XLI:
+    name: Industrials
+    group: risk_on
+    representative_holdings:
+      - GE
+      - CAT
+      - RTX
+      - HON
+      - UNP
+      - ETN
+      - DE
+      - BA
+      - UPS
+      - LMT
+  XLE:
+    name: Energy
+    group: cyclical
+    representative_holdings:
+      - XOM
+      - CVX
+      - COP
+      - EOG
+      - SLB
+      - MPC
+      - PSX
+      - VLO
+      - OXY
+      - HES
+  XLV:
+    name: Health Care
+    group: defensive
+    representative_holdings:
+      - LLY
+      - UNH
+      - JNJ
+      - ABBV
+      - MRK
+      - TMO
+      - ABT
+      - DHR
+      - PFE
+      - ISRG
+  XLP:
+    name: Consumer Staples
+    group: defensive
+    representative_holdings:
+      - PG
+      - COST
+      - KO
+      - PEP
+      - WMT
+      - PM
+      - MDLZ
+      - CL
+      - MO
+      - KMB
+  XLU:
+    name: Utilities
+    group: defensive
+    representative_holdings:
+      - NEE
+      - SO
+      - DUK
+      - CEG
+      - SRE
+      - AEP
+      - D
+      - EXC
+      - XEL
+      - ED
+  XLB:
+    name: Materials
+    group: cyclical
+    representative_holdings:
+      - LIN
+      - SHW
+      - APD
+      - FCX
+      - ECL
+      - NEM
+      - DOW
+      - DD
+      - PPG
+      - NUE
+  XLRE:
+    name: Real Estate
+    group: defensive
+    representative_holdings:
+      - PLD
+      - AMT
+      - EQIX
+      - WELL
+      - SPG
+      - PSA
+      - O
+      - CCI
+      - DLR
+      - VICI
+  XLC:
+    name: Communication Services
+    group: risk_on
+    representative_holdings:
+      - META
+      - GOOGL
+      - GOOG
+      - NFLX
+      - DIS
+      - TMUS
+      - VZ
+      - T
+      - CMCSA
+      - EA

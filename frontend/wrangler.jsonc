@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sector-radar",
+  "compatibility_date": "2026-06-23",
+  "pages_build_output_dir": "./dist",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sector-radar",
+      "database_id": "211ed515-584b-405a-98c5-5a781229ee79"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sector-radar-ingest",
+  "main": "./workers/ingest/index.ts",
+  "compatibility_date": "2026-06-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "REFRESH_INTERVAL_MINUTES": "15",
+    "YAHOO_FETCH_BUDGET": "38",
+    "YAHOO_FETCH_CONCURRENCY": "2"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sector-radar",
+      "database_id": "211ed515-584b-405a-98c5-5a781229ee79"
+    }
+  ]
+}

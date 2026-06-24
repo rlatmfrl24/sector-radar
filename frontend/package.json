@@ -1,0 +1,38 @@
+{
+  "name": "sector-radar-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "api": "python -m sector_radar.api.local_server",
+    "build": "tsc -b && npm run typecheck:worker && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "cf:dev": "wrangler pages dev dist --d1 DB=sector-radar-local",
+    "cf:deploy": "wrangler pages deploy dist",
+    "cf:ingest:dev": "wrangler dev --config wrangler.ingest.jsonc --test-scheduled",
+    "cf:ingest:deploy": "wrangler deploy --config wrangler.ingest.jsonc",
+    "cf:ingest:types": "wrangler types workers/worker-configuration.d.ts --config wrangler.ingest.jsonc",
+    "typecheck:worker": "tsc -p tsconfig.worker.json",
+    "test:worker": "vitest run workers"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.1.2",
+    "lucide-react": "^0.562.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "vite": "^7.3.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260623.1",
+    "@types/node": "^26.0.0",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.9",
+    "wrangler": "^4.56.0"
+  },
+  "overrides": {
+    "esbuild": "0.28.1"
+  }
+}
