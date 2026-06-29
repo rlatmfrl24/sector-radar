@@ -7,10 +7,11 @@ import type {
   SectorsResponse,
   ValidationResponse,
 } from "../types";
+import { normalizeSectorName } from "./sectorNames";
 
 export async function loadSectors(): Promise<SectorsResponse> {
   if (useSourceExamples()) {
-    return sourceExampleSectorsResponse;
+    return normalizeSectorsResponse(sourceExampleSectorsResponse);
   }
 
   try {
@@ -22,12 +23,22 @@ export async function loadSectors(): Promise<SectorsResponse> {
     }
     const data = (await response.json()) as SectorsResponse;
     if (!data.sectors.length) {
-      return sampleSectorsResponse;
+      return normalizeSectorsResponse(sampleSectorsResponse);
     }
-    return data;
+    return normalizeSectorsResponse(data);
   } catch {
-    return sampleSectorsResponse;
+    return normalizeSectorsResponse(sampleSectorsResponse);
   }
+}
+
+export function normalizeSectorsResponse(data: SectorsResponse): SectorsResponse {
+  return {
+    ...data,
+    sectors: data.sectors.map((sector) => ({
+      ...sector,
+      sector_name: normalizeSectorName(sector.sector_code, sector.sector_name),
+    })),
+  };
 }
 
 function useSourceExamples() {

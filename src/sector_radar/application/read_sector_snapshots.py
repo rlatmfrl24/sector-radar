@@ -6,6 +6,21 @@ from typing import Any
 
 from sector_radar.application.refresh_data import DEFAULT_PROVIDER, get_data_connection
 
+SECTOR_NAMES = {
+    "SMH": "Semiconductors",
+    "XLB": "Materials",
+    "XLC": "Communication Services",
+    "XLE": "Energy",
+    "XLF": "Financials",
+    "XLI": "Industrials",
+    "XLK": "Technology",
+    "XLP": "Consumer Staples",
+    "XLRE": "Real Estate",
+    "XLU": "Utilities",
+    "XLV": "Health Care",
+    "XLY": "Consumer Discretionary",
+}
+
 
 def read_latest_sector_response(
     conn: sqlite3.Connection,
@@ -52,7 +67,8 @@ def read_latest_sector_response(
         description[0]
         for description in conn.execute("SELECT * FROM sector_metrics_daily LIMIT 0").description
     ]
-    sectors = [_to_sector_snapshot(dict(zip(columns, row, strict=False))) for row in rows]
+    sector_names = _read_sector_names(conn)
+    sectors = [_to_sector_snapshot(dict(zip(columns, row, strict=False)), sector_names) for row in rows]
 
     return {
         "as_of": latest,
@@ -64,7 +80,7 @@ def read_latest_sector_response(
     }
 
 
-def _to_sector_snapshot(row: dict[str, Any]) -> dict[str, Any]:
+def _to_sector_snapshot(row: dict[str, Any], sector_names: dict[str, str] | None = None) -> dict[str, Any]:
     source_metrics = _parse_json(row.get("source_metrics_json"), {})
     data_freshness = _parse_json(
         row.get("data_freshness_json"),
@@ -75,7 +91,7 @@ def _to_sector_snapshot(row: dict[str, Any]) -> dict[str, Any]:
         "as_of": row["date"],
         "benchmark": row["benchmark"],
         "sector_code": row["sector_code"],
-        "sector_name": row["sector_code"],
+        "sector_name": _sector_name(str(row["sector_code"]), sector_names or {}),
         "quadrant": row.get("rrg_quadrant") or "unknown",
         "modules": {
             "relative_strength": {
@@ -122,6 +138,30 @@ def _to_sector_snapshot(row: dict[str, Any]) -> dict[str, Any]:
         },
         "data_freshness": data_freshness,
     }
+
+
+def _read_sector_names(conn: sqlite3.Connection) -> dict[str, str]:
+    try:
+        rows = conn.execute(
+            """
+            SELECT symbol, name
+            FROM instrument_master
+            WHERE is_active = 1
+              AND sector_code = symbol
+            """
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    return {
+        str(symbol).upper(): str(name)
+        for symbol, name in rows
+        if symbol and name and str(name).upper() != str(symbol).upper()
+    }
+
+
+def _sector_name(sector_code: str, sector_names: dict[str, str]) -> str:
+    normalized = sector_code.upper()
+    return sector_names.get(normalized) or SECTOR_NAMES.get(normalized) or sector_code
 
 
 def _classify_rs(value: Any) -> str:

@@ -6,6 +6,7 @@ import {
 } from "../_shared/layerOneFlow";
 import { readLatestMarketContext } from "../_shared/marketContext";
 import { buildRadarDerived } from "../_shared/radarDerived";
+import { normalizeSectorName } from "../../src/lib/sectorNames";
 
 interface Env {
   DB: D1Database;
@@ -159,7 +160,7 @@ function toSectorSnapshot(row: SectorMetricRow) {
     as_of: row.date,
     benchmark: row.benchmark,
     sector_code: row.sector_code,
-    sector_name: row.sector_code,
+    sector_name: normalizeSectorName(row.sector_code, row.sector_code),
     quadrant: row.rrg_quadrant ?? "unknown",
     modules: {
       relative_strength: {

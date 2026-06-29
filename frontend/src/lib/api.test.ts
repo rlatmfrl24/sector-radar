@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { loadHistory } from "./api";
+import { sourceExampleSectorsResponse } from "../data/sampleSectors";
+import { loadHistory, normalizeSectorsResponse } from "./api";
+import { normalizeSectorName } from "./sectorNames";
 
 describe("API fallback responses", () => {
   afterEach(() => {
@@ -23,5 +25,21 @@ describe("API fallback responses", () => {
         limited_by_data: true,
       },
     });
+  });
+
+  it("normalizes sector names when an API response only contains ETF symbols", () => {
+    const response = {
+      ...sourceExampleSectorsResponse,
+      sectors: sourceExampleSectorsResponse.sectors.map((sector) => ({
+        ...sector,
+        sector_name: sector.sector_code,
+      })),
+    };
+
+    expect(normalizeSectorsResponse(response).sectors.find((sector) => sector.sector_code === "SMH")).toMatchObject({
+      sector_name: "Semiconductors",
+    });
+    expect(normalizeSectorName("XLC", "XLC")).toBe("Communication Services");
+    expect(normalizeSectorName("CUSTOM", "Custom Sector")).toBe("Custom Sector");
   });
 });
