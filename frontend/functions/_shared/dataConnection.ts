@@ -9,6 +9,7 @@ interface D1Database {
 interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
   first<T = unknown>(): Promise<T | null>;
+  all<T = unknown>(): Promise<{ results?: T[] }>;
 }
 
 interface DataRefreshRow {
@@ -61,6 +62,34 @@ export async function readDataConnection(
   }
 }
 
+export async function readDataConnections(env: Env) {
+  const providers = ["yahoo_finance", "fred", "krx_openapi"];
+  try {
+    const rows = await env.DB.prepare(
+      `SELECT * FROM data_refresh_status WHERE provider IN (?, ?, ?)`,
+    )
+      .bind(...providers)
+      .all<DataRefreshRow>();
+    const byProvider = new Map((rows.results ?? []).map((row) => [row.provider, row]));
+
+    return Object.fromEntries(
+      providers.map((provider) => [
+        provider,
+        toDataConnection(byProvider.get(provider) ?? null, provider, provider === "yahoo_finance" ? 15 : provider === "fred" ? 720 : 1440),
+      ]),
+    );
+  } catch {
+    return Object.fromEntries(
+      providers.map((provider) => [
+        provider,
+        toDataConnection(null, provider, provider === "yahoo_finance" ? 15 : provider === "fred" ? 720 : 1440, {
+          message: "Apply D1 migrations and deploy provider-specific refresh status tables.",
+        }),
+      ]),
+    );
+  }
+}
+
 function modeFromRow(row: DataRefreshRow | null) {
   if (!row) return "stale";
   if (row.status === "success") return "live";
@@ -75,4 +104,26 @@ function defaultMessage(row: DataRefreshRow | null) {
   if (row.status === "skipped_rate_limited") return "Refresh skipped because the 15 minute gate is active.";
   if (row.status === "failed") return row.message ?? "Cloudflare cron refresh failed.";
   return "Cloudflare cron owns Yahoo refresh; public manual refresh is disabled.";
+}
+
+function toDataConnection(
+  row: DataRefreshRow | null,
+  provider: string,
+  refreshIntervalMinutes: number,
+  options: { message?: string } = {},
+) {
+  return {
+    provider: row?.provider ?? provider,
+    mode: modeFromRow(row),
+    status: row?.status ?? "never_run",
+    refresh_interval_minutes: refreshIntervalMinutes,
+    last_attempt_at: row?.last_attempt_at ?? undefined,
+    last_success_at: row?.last_success_at ?? undefined,
+    next_allowed_at: row?.next_allowed_at ?? undefined,
+    latest_price_date: row?.latest_price_date ?? undefined,
+    symbol_count: row?.symbol_count ?? 0,
+    rows_upserted: row?.rows_upserted ?? 0,
+    manual_refresh_available: false,
+    message: options.message ?? row?.message ?? defaultMessage(row),
+  };
 }

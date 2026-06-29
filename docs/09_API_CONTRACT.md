@@ -102,7 +102,7 @@ sector_radar.pipeline.build_relative_strength_snapshot_from_db(...)
 
 ## 3. Data Connection
 
-`GET /api/sectors`는 sector snapshot과 함께 현재 데이터 연결 상태를 반환합니다.
+`GET /api/sectors`는 sector snapshot과 함께 현재 데이터 연결 상태를 반환합니다. `data_connection`은 기존 Yahoo 호환 필드로 유지하고, 신규 UI는 provider별 `data_connections`와 top-level `market_context`를 우선 사용합니다.
 
 ```json
 {
@@ -122,6 +122,180 @@ sector_radar.pipeline.build_relative_strength_snapshot_from_db(...)
     "message": "Yahoo Finance research refresh completed."
   }
 }
+```
+
+Provider별 상태:
+
+```json
+{
+  "data_connections": {
+    "yahoo_finance": {
+      "provider": "yahoo_finance",
+      "mode": "live",
+      "status": "success",
+      "refresh_interval_minutes": 15,
+      "latest_price_date": "2026-06-22",
+      "manual_refresh_available": false
+    },
+    "fred": {
+      "provider": "fred",
+      "mode": "stale",
+      "status": "never_run",
+      "refresh_interval_minutes": 720,
+      "manual_refresh_available": false
+    },
+    "krx_openapi": {
+      "provider": "krx_openapi",
+      "mode": "stale",
+      "status": "never_run",
+      "refresh_interval_minutes": 1440,
+      "manual_refresh_available": false
+    }
+  }
+}
+```
+
+Layer 2 market context는 top-level로 제공됩니다. `source_class`는 `official | proxy | manual | held` 중 하나이며, official이 있으면 proxy보다 우선합니다.
+
+```json
+{
+  "market_context": [
+    {
+      "code": "S03",
+      "title": "글로벌 신용환경",
+      "availability": "live",
+      "source_class": "official",
+      "state": "neutral",
+      "transition": "stable",
+      "source": "FRED: BAMLH0A0HYM2, VIXCLS",
+      "meaning": "스프레드와 변동성 레짐 확인",
+      "evidence": {
+        "HY_OAS_latest": 3.18,
+        "VIXCLS_latest": 16.4,
+        "latest_date": "2026-06-22"
+      },
+      "warnings": [],
+      "data_freshness": {
+        "provider": "fred",
+        "source_class": "official",
+        "latest_date": "2026-06-22"
+      }
+    }
+  ]
+}
+```
+
+Benchmark 흡수 기능은 같은 `/api/sectors` 응답에 파생 필드로 제공됩니다. 이 필드들은 별도 DB migration 없이 `data_refresh_status`, `market_context_daily`, 최신 sector snapshot에서 계산됩니다.
+
+```json
+{
+  "layer1_flow": {
+    "as_of": "2026-06-23",
+    "state": "constructive",
+    "transition": "stable",
+    "narrative": "시장 tape는 우호적이고 breadth가 넓게 받쳐줍니다. VIX 16.4 기준으로 변동성 상태를 함께 봅니다.",
+    "tape": {
+      "benchmark": "SPY",
+      "latest_close": 622.14,
+      "latest_date": "2026-06-23",
+      "ret_1d": 0.006,
+      "ret_1w": 0.014,
+      "ret_1m": 0.032,
+      "ret_3m": 0.071,
+      "range_52w_position": 82.5,
+      "realized_vol_20": 12.8
+    },
+    "risk": {
+      "state": "calm",
+      "transition": "stable",
+      "vix_latest": 16.4,
+      "vix_change_5d": -0.8,
+      "realized_vol_20": 12.8
+    },
+    "breadth_quality": {
+      "state": "mixed",
+      "transition": "stable",
+      "healthy_sectors": 4,
+      "weak_sectors": 4,
+      "total_sectors": 12,
+      "rsp_vs_spy_1m": -0.006,
+      "iwm_vs_spy_1m": -0.012,
+      "qqq_vs_spy_1m": 0.018,
+      "holding_coverage_fresh": 80,
+      "holding_coverage_total": 120
+    },
+    "warnings": ["proxy_inputs_not_official_breadth"],
+    "data_freshness": {
+      "provider": "yahoo_finance",
+      "source_class": "proxy",
+      "series": [
+        { "series_id": "SPY", "latest_date": "2026-06-23" },
+        { "series_id": "RSP", "latest_date": "2026-06-23" },
+        { "series_id": "IWM", "latest_date": "2026-06-23" },
+        { "series_id": "^VIX", "latest_date": "2026-06-23" }
+      ]
+    }
+  },
+  "source_freshness": [
+    {
+      "id": "context:S03",
+      "label": "S03 글로벌 신용환경",
+      "provider": "fred",
+      "series_id": "FRED:BAMLH0A0HYM2",
+      "source_class": "official",
+      "frequency": "daily",
+      "latest_date": "2026-06-22",
+      "stale": false,
+      "status": "live",
+      "warning": null
+    }
+  ],
+  "watchlist": [
+    {
+      "id": "credit_volatility",
+      "label": "HY OAS / VIX",
+      "trigger": "spread or volatility expansion",
+      "meaning": "신용과 변동성이 섹터 리더십을 훼손하는지 확인합니다.",
+      "status": "quiet",
+      "source_class": "official",
+      "evidence": {
+        "state": "neutral",
+        "transition": "stable",
+        "latest_date": "2026-06-22"
+      },
+      "warnings": []
+    }
+  ],
+  "context_reconciliation": {
+    "state": "divergent",
+    "transition": "weakening",
+    "narrative": "섹터 리더십은 살아 있지만 FX·신용·집중도 중 일부가 압박을 보여 모듈 불일치가 있습니다.",
+    "evidence": {
+      "constructive_sector_count": 4,
+      "pressure_contexts": "S02",
+      "concentration_method": "rs_leadership_proxy"
+    },
+    "warnings": ["leadership_context_disagreement"]
+  }
+}
+```
+
+Layer 1 수집/조합 원칙:
+
+```text
+provider: Yahoo Finance chart adapter
+symbols: SPY, QQQ, RSP, IWM, ^VIX
+storage: series_daily long-format close rows
+analysis: benchmark tape, 52-week range, realized volatility, VIX state, RSP/IWM/QQQ vs SPY 1M proxy
+exposure: source_class=proxy, no raw OHLCV API exposure, no probability claims
+```
+
+허용 상태:
+
+```text
+source_freshness.status = live | stale | unavailable | manual_check
+watchlist.status = quiet | fired | unknown | manual_check
+context_reconciliation.state = supportive | divergent | risk_rising | rotation_watch | data_insufficient
 ```
 
 로컬 Python API의 `POST /api/refresh`는 수동 갱신을 요청하지만 15분 upstream gate를 우회하지 않습니다.
@@ -172,7 +346,28 @@ Cloudflare Pages MVP endpoint:
 ```text
 GET /api/sectors
 GET /api/data/status
+GET /api/history
+GET /api/validation
 POST /api/refresh
+```
+
+`GET /api/history` returns bounded trails for RRG and market context. It accepts `timeframe=30D|90D|180D` and still supports the older bounded `limit` parameter. If not enough data exists, it degrades to empty arrays.
+
+`GET /api/validation` starts as:
+
+```json
+{
+  "status": "unvalidated",
+  "expose_probability": false,
+  "scorecard": {
+    "sector_rrg_ic": null,
+    "pattern_hit_rate": null,
+    "sample_size": 0
+  },
+  "limitations": [
+    "Walk-forward validation and calibration are not implemented yet."
+  ]
+}
 ```
 
 ## 6. Error Contract

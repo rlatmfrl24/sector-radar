@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  ContextRail,
   DashboardTopBar,
   FlowLiquidityView,
+  FreshnessBar,
   LayerThreeLeadership,
   LoadingScreen,
 } from "./features/radar/components";
@@ -14,26 +16,85 @@ import {
   sortSectors,
   type RadarView,
 } from "./features/radar/model";
-import { loadSectors, refreshData } from "./lib/api";
-import type { SectorsResponse } from "./types";
+import { loadHistory, refreshData } from "./lib/api";
+import {
+  loadDashboardSnapshot,
+  selectSnapshotSectorCode,
+  snapshotSyncInterval,
+  type DashboardSnapshot,
+} from "./lib/dashboardSnapshot";
+import type { HistoryResponse, HistoryTimeframe, SectorsResponse, ValidationResponse } from "./types";
 
 function App() {
   const [data, setData] = useState<SectorsResponse | null>(null);
+  const [history, setHistory] = useState<HistoryResponse | null>(null);
+  const [validation, setValidation] = useState<ValidationResponse | null>(null);
   const [activeView, setActiveView] = useState<RadarView>("flow");
+  const [historyTimeframe, setHistoryTimeframe] = useState<HistoryTimeframe>("90D");
   const [selectedCode, setSelectedCode] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  const applyDashboardSnapshot = useCallback(
+    (snapshot: DashboardSnapshot, preserveSelected: boolean) => {
+      setData(snapshot.data);
+      setHistory(snapshot.history);
+      setValidation(snapshot.validation);
+      setSelectedCode((current) => selectSnapshotSectorCode(current, snapshot.data.sectors, preserveSelected));
+    },
+    [],
+  );
+
+  const reloadDashboardSnapshot = useCallback(
+    async (preserveSelected = true) => {
+      const snapshot = await loadDashboardSnapshot(historyTimeframe);
+      applyDashboardSnapshot(snapshot, preserveSelected);
+      return snapshot;
+    },
+    [applyDashboardSnapshot, historyTimeframe],
+  );
+
   useEffect(() => {
     let active = true;
-    void loadSectors().then((response) => {
+    void loadDashboardSnapshot("90D").then((snapshot) => {
       if (!active) return;
-      setData(response);
-      setSelectedCode(response.sectors[0]?.sector_code ?? "");
+      applyDashboardSnapshot(snapshot, false);
     });
     return () => {
       active = false;
     };
-  }, []);
+  }, [applyDashboardSnapshot]);
+
+  useEffect(() => {
+    let active = true;
+    let inFlight = false;
+
+    const syncSnapshot = () => {
+      if (!active || inFlight || document.visibilityState === "hidden") return;
+      inFlight = true;
+      void loadDashboardSnapshot(historyTimeframe)
+        .then((snapshot) => {
+          if (active) applyDashboardSnapshot(snapshot, true);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          inFlight = false;
+        });
+    };
+
+    const intervalMs = snapshotSyncInterval(data?.data_connection.status);
+    const intervalId = window.setInterval(syncSnapshot, intervalMs);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") syncSnapshot();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [applyDashboardSnapshot, data?.data_connection.status, historyTimeframe]);
+
 
   const sectors = data?.sectors ?? [];
   const selected = sectors.find((sector) => sector.sector_code === selectedCode) ?? sectors[0];
@@ -46,18 +107,18 @@ function App() {
   async function handleRefresh() {
     setIsRefreshing(true);
     try {
-      const refresh = await refreshData();
-      const response = await loadSectors();
-      setData({
-        ...response,
-        data_connection: refresh.data_connection ?? response.data_connection,
-      });
-      setSelectedCode((current) => current || (response.sectors[0]?.sector_code ?? ""));
+      await refreshData();
+      await reloadDashboardSnapshot(true);
     } catch {
-      setData(await loadSectors());
+      await reloadDashboardSnapshot(true);
     } finally {
       setIsRefreshing(false);
     }
+  }
+
+  async function handleHistoryTimeframeChange(timeframe: HistoryTimeframe) {
+    setHistoryTimeframe(timeframe);
+    setHistory(await loadHistory(timeframe));
   }
 
   if (!data || !selected) {
@@ -74,12 +135,19 @@ function App() {
         onViewChange={setActiveView}
       />
       <section className="view-workspace" aria-label="sector radar workspace">
+        <FreshnessBar data={data} />
+        <ContextRail data={data} />
         {activeView === "flow" ? (
           <FlowLiquidityView
             grouped={grouped}
             healthyBreadthCount={healthyBreadthCount}
+            layerOneFlow={data.layer1_flow}
+            marketContext={data.market_context ?? []}
+            contextHistory={history?.market_context ?? []}
+            contextReconciliation={data.context_reconciliation}
             sectors={rankedSectors}
             selected={selected}
+            watchlist={data.watchlist ?? []}
             warnings={warnings}
             weakBreadthCount={weakBreadthCount}
           />
@@ -89,6 +157,10 @@ function App() {
             sectors={rankedSectors}
             selected={selected}
             selectedCode={selected.sector_code}
+            history={history}
+            historyTimeframe={historyTimeframe}
+            onHistoryTimeframeChange={handleHistoryTimeframeChange}
+            validation={validation}
             warnings={warnings}
           />
         )}

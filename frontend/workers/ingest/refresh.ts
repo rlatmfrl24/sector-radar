@@ -10,7 +10,9 @@ import type {
   SeriesRow,
 } from "./contracts";
 import { buildSectorMetricRows, priceBarsToSeriesRows, shouldSkipRateLimited } from "./engine";
+import { buildMarketContextFromSeriesRows, marketContextCardsToRows } from "./marketContext";
 import {
+  MARKET,
   allSymbols,
   buildCoreRefreshSymbols,
   buildHoldingRefreshSymbols,
@@ -78,6 +80,10 @@ export async function refreshMarketData(
   });
 
   if ("status" in plan) {
+    const recovered = recoverSkippedStatus(provider.name, existing, plan.message, attemptedAt, now);
+    if (recovered) {
+      await store.upsertStatus(recovered);
+    }
     await store.upsertRunLog({
       run_id: buildRunId(provider.name, attemptedAt),
       run_type: RUN_TYPE,
@@ -86,7 +92,7 @@ export async function refreshMarketData(
       status: plan.status,
       message: plan.message,
     });
-    return skippedOutcome(plan.status, provider.name, existing, plan.message, refreshIntervalMinutes);
+    return skippedOutcome(plan.status, provider.name, recovered ?? existing, recovered?.message ?? plan.message, refreshIntervalMinutes);
   }
 
   if (shouldSkipRateLimited(existing?.next_allowed_at, now)) {
@@ -157,6 +163,8 @@ export async function refreshMarketData(
     const rows = priceBarsToSeriesRows(fetched.bars, SOURCE, attemptedAt);
     const rowsUpserted = await store.upsertSeries(rows);
     const historicalRows = await store.readSeries(symbols, lookbackStart);
+    const marketContext = buildMarketContextFromSeriesRows(historicalRows, attemptedAt);
+    await store.upsertMarketContext(marketContextCardsToRows(marketContext, MARKET, attemptedAt));
     const latestCoreDate = latestCommonCloseDate(historicalRows, coreSymbols());
     const holdingCoverage = holdingFreshnessCoverage(historicalRows, latestCoreDate);
     const metricRows = buildSectorMetricRows(historicalRows, attemptedAt, {
@@ -517,6 +525,28 @@ function skippedOutcome(
       ...connection,
       message,
     },
+  };
+}
+
+function recoverSkippedStatus(
+  provider: string,
+  existing: DataRefreshStatusRow | null | undefined,
+  message: string,
+  attemptedAt: string,
+  now: Date,
+): DataRefreshStatusRow | null {
+  if (!isStaleRefreshing(existing, now)) return null;
+  const recoveredStatus: RefreshStatus = existing?.last_success_at ? "success" : "failed";
+  const recoveryMessage =
+    existing?.last_success_at
+      ? `${message} Previous refresh from ${existing.last_attempt_at ?? "unknown"} did not finalize; restored last successful snapshot.`
+      : `${message} Previous refresh from ${existing?.last_attempt_at ?? "unknown"} did not finalize and no successful snapshot exists.`;
+  return {
+    ...baseStatus(provider, existing),
+    status: recoveredStatus,
+    last_attempt_at: attemptedAt,
+    rows_upserted: 0,
+    message: recoveryMessage,
   };
 }
 

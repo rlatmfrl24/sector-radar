@@ -37,8 +37,19 @@ jobs:
 
       - name: Validate frontend and Worker
         run: |
+          npm run cf:ingest:types:check
+          npm run test:app
           npm run test:worker
           npm run build
+          npx wrangler deploy --config wrangler.ingest.jsonc --dry-run
+
+      - name: Apply D1 migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: frontend
+          command: d1 migrations apply sector-radar --remote --config wrangler.jsonc
 
       - name: Deploy Pages
         uses: cloudflare/wrangler-action@v3

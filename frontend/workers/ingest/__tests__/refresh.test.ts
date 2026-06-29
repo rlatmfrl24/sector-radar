@@ -4,16 +4,20 @@ import type {
   DataRefreshStatusRow,
   InstrumentRow,
   MarketDataProvider,
+  MarketContextRow,
   PriceBar,
   RefreshStore,
   RunLogRow,
   SectorMetricRow,
   SeriesRow,
 } from "../contracts";
+import { refreshFredMarketContext, refreshKrxMarketContext } from "../contextRefresh";
 import { buildSectorMetricRows, priceBarsToSeriesRows } from "../engine";
+import { FredProvider } from "../fredProvider";
+import { KrxOpenApiProvider } from "../krxProvider";
 import { YahooChartProvider } from "../providers";
 import { refreshMarketData } from "../refresh";
-import { allSymbols, buildCoreRefreshSymbols, coreSymbols } from "../universe";
+import { allSymbols, buildCoreRefreshSymbols, coreSymbols, layerOneYahooSymbols } from "../universe";
 
 class FakeProvider implements MarketDataProvider {
   readonly name = "yahoo_finance";
@@ -44,13 +48,27 @@ class MemoryRefreshStore implements RefreshStore {
   runLogs = new Map<string, RunLogRow>();
   series = new Map<string, SeriesRow>();
   metrics = new Map<string, SectorMetricRow>();
+  marketContext = new Map<string, MarketContextRow>();
 
-  async readStatus(): Promise<DataRefreshStatusRow | null> {
-    return this.status;
+  async readStatus(provider = "yahoo_finance"): Promise<DataRefreshStatusRow | null> {
+    if (provider === "yahoo_finance") return this.status;
+    return this.providerStatuses.get(provider) ?? null;
+  }
+
+  providerStatuses = new Map<string, DataRefreshStatusRow>();
+
+  async readStatuses(providers: string[]): Promise<DataRefreshStatusRow[]> {
+    return providers
+      .map((provider) => (provider === "yahoo_finance" ? this.status : this.providerStatuses.get(provider)))
+      .filter((row): row is DataRefreshStatusRow => row !== null && row !== undefined);
   }
 
   async upsertStatus(row: DataRefreshStatusRow): Promise<void> {
-    this.status = row;
+    if (row.provider === "yahoo_finance") {
+      this.status = row;
+    } else {
+      this.providerStatuses.set(row.provider, row);
+    }
   }
 
   async upsertRunLog(row: RunLogRow): Promise<void> {
@@ -76,6 +94,19 @@ class MemoryRefreshStore implements RefreshStore {
   async upsertSectorMetrics(rows: SectorMetricRow[]): Promise<void> {
     rows.forEach((row) => this.metrics.set(`${row.market}|${row.sector_code}|${row.date}|${row.benchmark}`, row));
   }
+
+  async upsertMarketContext(rows: MarketContextRow[]): Promise<void> {
+    rows.forEach((row) => this.marketContext.set(`${row.market}|${row.context_code}|${row.date}`, row));
+  }
+
+  async readLatestMarketContext(_market = "US"): Promise<MarketContextRow[]> {
+    const latestByCode = new Map<string, MarketContextRow>();
+    for (const row of this.marketContext.values()) {
+      const current = latestByCode.get(row.context_code);
+      if (!current || row.date > current.date) latestByCode.set(row.context_code, row);
+    }
+    return [...latestByCode.values()].sort((a, b) => a.context_code.localeCompare(b.context_code));
+  }
 }
 
 describe("Cloudflare ingest refresh", () => {
@@ -87,6 +118,7 @@ describe("Cloudflare ingest refresh", () => {
     const planned = buildCoreRefreshSymbols(32);
 
     expect(planned.slice(0, coreSymbols().length)).toEqual(coreSymbols());
+    expect(planned).toEqual(expect.arrayContaining(layerOneYahooSymbols()));
     expect(planned.length).toBeLessThanOrEqual(32);
   });
 
@@ -136,7 +168,7 @@ describe("Cloudflare ingest refresh", () => {
     const provider = new FakeProvider(makeBars(allSymbols(), 260));
 
     const result = await refreshMarketData(store, provider, {
-      now: new Date("2026-06-23T18:00:00Z"),
+      now: new Date("2026-06-24T03:00:00Z"),
       refreshIntervalMinutes: 15,
     });
 
@@ -172,9 +204,40 @@ describe("Cloudflare ingest refresh", () => {
     expect(store.status?.status).toBe("success");
   });
 
+  it("recovers stale refreshing status even when the next cron is off-window", async () => {
+    const store = new MemoryRefreshStore();
+    store.status = {
+      provider: "yahoo_finance",
+      status: "refreshing",
+      last_attempt_at: "2026-06-23T20:30:00+00:00",
+      last_success_at: "2026-06-22T20:45:00+00:00",
+      next_allowed_at: "2026-06-23T20:45:00+00:00",
+      latest_price_date: "2026-06-23",
+      symbol_count: 38,
+      rows_upserted: 0,
+      message: "Prior run did not finalize.",
+    };
+    const provider = new FakeProvider(makeBars(allSymbols(), 260));
+
+    const result = await refreshMarketData(store, provider, {
+      now: new Date("2026-06-24T03:00:00Z"),
+      refreshIntervalMinutes: 15,
+    });
+
+    expect(result.status).toBe("skipped_market_schedule");
+    expect(result.data_connection.status).toBe("success");
+    expect(provider.calls).toBe(0);
+    expect(store.status).toMatchObject({
+      status: "success",
+      last_success_at: "2026-06-22T20:45:00+00:00",
+      latest_price_date: "2026-06-23",
+    });
+    expect(store.status?.message).toContain("restored last successful snapshot");
+  });
+
   it("fetches existing symbols incrementally and only missing symbols with full history", async () => {
     const now = new Date("2026-06-23T20:30:00Z");
-    const planned = buildCoreRefreshSymbols(32);
+    const planned = buildCoreRefreshSymbols(38);
     const missingSymbol = planned.at(-1)!;
     const store = new MemoryRefreshStore();
     await store.upsertSeries(
@@ -296,6 +359,191 @@ describe("Cloudflare ingest refresh", () => {
     expect(result.failures).toEqual([]);
   });
 
+  it("uses the default global fetch safely for FRED requests", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      Response.json({
+        observations: [{ date: "2026-06-23", value: "4.25" }],
+      }),
+    );
+    const provider = new FredProvider({ apiKey: "test-key" });
+
+    const result = await provider.fetchSeries(["DFF"], "2026-06-01", "2026-06-25T00:00:00+00:00");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.failures).toEqual([]);
+    expect(result.rows).toEqual([
+      {
+        series_id: "FRED:DFF",
+        date: "2026-06-23",
+        field: "value",
+        value: 4.25,
+        source: "fred",
+        fetched_at: "2026-06-25T00:00:00+00:00",
+      },
+    ]);
+  });
+
+  it("uses the default global fetch safely for KRX requests", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      Response.json({
+        OutBlock_1: [{ BAS_DD: "20260624", FRGN_NTBY_TRDVAL: "1,234" }],
+      }),
+    );
+    const provider = new KrxOpenApiProvider({
+      apiKey: "test-key",
+      endpoint: "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd",
+    });
+
+    const result = await provider.fetchMarketContext("2026-06-24", "2026-06-25T00:00:00+00:00");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("https://data-dbg.krx.co.kr");
+    expect(result.failures).toEqual([]);
+    expect(result.rows).toEqual([
+      {
+        series_id: "KRX:FOREIGN_NET_BUY",
+        date: "2026-06-24",
+        field: "value",
+        value: 1234,
+        source: "krx_openapi",
+        fetched_at: "2026-06-25T00:00:00+00:00",
+      },
+    ]);
+  });
+
+  it("upgrades configured KRX HTTP endpoints before sending the auth header", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(Response.json({ OutBlock_1: [] }));
+    const provider = new KrxOpenApiProvider({
+      apiKey: "test-key",
+      endpoint: "http://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd",
+    });
+
+    await provider.fetchMarketContext("2026-06-24", "2026-06-25T00:00:00+00:00");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/^https:\/\/data-dbg\.krx\.co\.kr/);
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({ AUTH_KEY: "test-key" });
+  });
+
+  it("requests the previous KST business date without UTC date drift", async () => {
+    const store = new MemoryRefreshStore();
+    let requestedDate = "";
+    const provider = {
+      name: "krx_openapi",
+      async fetchMarketContext(date: string, fetchedAt: string) {
+        requestedDate = date;
+        return {
+          failures: [],
+          rows: [
+            {
+              date,
+              fetched_at: fetchedAt,
+              field: "value",
+              series_id: "KRX:EQUITY_TRADE_VALUE",
+              source: "krx_openapi",
+              value: 1,
+            },
+          ],
+        };
+      },
+    };
+
+    const outcome = await refreshKrxMarketContext(store, provider, {
+      ignoreSchedule: true,
+      now: new Date("2026-06-25T00:30:00Z"),
+    });
+
+    expect(outcome).toBe("success");
+    expect(requestedDate).toBe("2026-06-24");
+  });
+
+  it("preserves prior official freshness when a provider refresh fails", async () => {
+    const store = new MemoryRefreshStore();
+    store.providerStatuses.set("fred", {
+      provider: "fred",
+      status: "success",
+      last_attempt_at: "2026-06-24T21:00:00+00:00",
+      last_success_at: "2026-06-24T21:00:00+00:00",
+      next_allowed_at: "2026-06-24T22:00:00+00:00",
+      latest_price_date: "2026-06-24",
+      symbol_count: 4,
+      rows_upserted: 20,
+      message: "Prior success.",
+    });
+    const provider = {
+      name: "fred",
+      async fetchDefaultSeries() {
+        return {
+          failures: [{ symbol: "FRED:WALCL", message: "temporary upstream failure" }],
+          rows: [],
+        };
+      },
+    };
+
+    const outcome = await refreshFredMarketContext(store, provider, {
+      ignoreSchedule: true,
+      now: new Date("2026-06-25T21:00:00Z"),
+    });
+    const status = store.providerStatuses.get("fred");
+
+    expect(outcome).toBe("failed");
+    expect(status).toMatchObject({
+      status: "failed",
+      last_success_at: "2026-06-24T21:00:00+00:00",
+      latest_price_date: "2026-06-24",
+    });
+    expect(status?.message).toContain("temporary upstream failure");
+  });
+
+  it("stores official KRX daily trading fields as market reference series", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        Response.json({
+          OutBlock_1: [
+            {
+              BAS_DD: "20260624",
+              MKT_NM: "KOSPI",
+              ACC_TRDVOL: "10",
+              ACC_TRDVAL: "1,000",
+              MKTCAP: "50,000",
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          OutBlock_1: [
+            {
+              BAS_DD: "20260624",
+              MKT_NM: "KOSDAQ",
+              ACC_TRDVOL: "20",
+              ACC_TRDVAL: "2,000",
+              MKTCAP: "60,000",
+            },
+          ],
+        }),
+      );
+    const provider = new KrxOpenApiProvider({
+      apiKey: "test-key",
+      endpoint:
+        "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd,https://data-dbg.krx.co.kr/svc/apis/sto/ksq_bydd_trd",
+    });
+
+    const result = await provider.fetchMarketContext("2026-06-24", "2026-06-25T00:00:00+00:00");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.failures).toEqual([]);
+    expect(result.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ series_id: "KRX:KOSPI_TRADE_VALUE", value: 1000 }),
+        expect.objectContaining({ series_id: "KRX:KOSDAQ_TRADE_VALUE", value: 2000 }),
+        expect.objectContaining({ series_id: "KRX:EQUITY_TRADE_VALUE", value: 3000 }),
+        expect.objectContaining({ series_id: "KRX:EQUITY_MARKET_CAP", value: 110000 }),
+      ]),
+    );
+  });
+
   it("converts OHLCV bars to deterministic long-format rows", () => {
     const rows = priceBarsToSeriesRows(
       [
@@ -325,6 +573,34 @@ describe("Cloudflare ingest refresh", () => {
     expect(metrics.length).toBeGreaterThanOrEqual(10);
     expect(metrics[0]?.validation_status).toBe("unvalidated");
     expect(metrics[0]?.expose_probability).toBe(0);
+  });
+
+  it("uses the latest market context date across all context cards", () => {
+    const bars = makeBars(allSymbols(), 260);
+    const priceRows = priceBarsToSeriesRows(bars, "fixture", "2026-06-24T00:00:00+00:00");
+    const contextRows: SeriesRow[] = [
+      {
+        series_id: "FRED:WALCL",
+        date: "2026-06-20",
+        field: "value",
+        value: 7_100_000,
+        source: "fred",
+        fetched_at: "2026-06-24T00:00:00+00:00",
+      },
+      {
+        series_id: "FRED:DEXKOUS",
+        date: "2026-06-24",
+        field: "value",
+        value: 1390,
+        source: "fred",
+        fetched_at: "2026-06-24T00:00:00+00:00",
+      },
+    ];
+
+    const metrics = buildSectorMetricRows([...priceRows, ...contextRows], "2026-06-24T00:00:00+00:00");
+    const freshness = JSON.parse(metrics[0]?.data_freshness_json ?? "{}") as Record<string, unknown>;
+
+    expect(freshness.market_context_latest_date).toBe("2026-06-24");
   });
 });
 

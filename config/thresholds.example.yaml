@@ -21,6 +21,19 @@ participation:
   cmf_positive: 0.05
   obv_slope_window: 20
 
+layer_one_flow:
+  benchmark: SPY
+  proxy_symbols:
+    equal_weight: RSP
+    small_cap: IWM
+    growth: QQQ
+    volatility: ^VIX
+  caution_return_1m: -0.03
+  constructive_range_52w: 55.0
+  elevated_vix: 25.0
+  healthy_breadth_ratio: 0.50
+  weakening_vix_change_5d: 1.50
+
 rulebook:
   max_unknown_modules_for_high_conviction: 1
   strength_max: 4

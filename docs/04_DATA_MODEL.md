@@ -16,6 +16,7 @@
 | `instrument_master` | ETF, 종목, 지수, benchmark 메타데이터 |
 | `series_daily` | 가격·거래량·지수 등 모든 원천 시계열 |
 | `sector_metrics_daily` | 섹터별 계산 지표와 상태 |
+| `market_context_daily` | Layer 2 market context 카드별 상태와 freshness |
 | `watchlist_events` | Rulebook 이벤트 발동 이력 |
 | `manual_catalyst_ledger` | 사람이 입력한 catalyst 이력 |
 | `run_log` | ingest / compute 실행 이력 |
@@ -63,7 +64,7 @@ CREATE INDEX IF NOT EXISTS idx_series_daily_lookup
 ON series_daily(series_id, field, date);
 ```
 
-`series_daily`는 가격뿐 아니라 volume도 저장할 수 있도록 `field`를 둡니다.
+`series_daily`는 가격뿐 아니라 volume, FRED/KRX 원자료 값도 저장할 수 있도록 `field`를 둡니다. 가격은 OHLCV long-format, 비가격 시계열은 `field = value`를 사용합니다.
 
 예:
 
@@ -71,6 +72,9 @@ ON series_daily(series_id, field, date);
 series_id = XLK, field = close
 series_id = XLK, field = volume
 series_id = SPY, field = close
+series_id = FRED:WALCL, field = value
+series_id = KRX:FOREIGN_NET_BUY, field = value
+series_id = KRX:EQUITY_TRADE_VALUE, field = value
 ```
 
 ```sql
@@ -124,6 +128,31 @@ CREATE TABLE IF NOT EXISTS sector_metrics_daily (
 CREATE INDEX IF NOT EXISTS idx_sector_metrics_trail
 ON sector_metrics_daily(market, sector_code, date);
 ```
+
+```sql
+CREATE TABLE IF NOT EXISTS market_context_daily (
+    market              TEXT NOT NULL,
+    context_code        TEXT NOT NULL,
+    date                DATE NOT NULL,
+    state               TEXT NOT NULL,
+    transition          TEXT NOT NULL,
+    availability        TEXT NOT NULL,
+    source_class        TEXT NOT NULL,
+    title               TEXT NOT NULL,
+    source              TEXT NOT NULL,
+    meaning             TEXT NOT NULL,
+    evidence_json       TEXT NOT NULL DEFAULT '{}',
+    warnings_json       TEXT NOT NULL DEFAULT '[]',
+    data_freshness_json TEXT NOT NULL DEFAULT '{}',
+    computed_at         TIMESTAMP NOT NULL,
+    PRIMARY KEY (market, context_code, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_market_context_daily_latest
+ON market_context_daily(market, context_code, date);
+```
+
+`source_class`는 `official | proxy | manual | held` 중 하나입니다. 동일 카드에 official과 proxy가 모두 있으면 UI와 API는 official을 우선합니다.
 
 ```sql
 CREATE TABLE IF NOT EXISTS watchlist_events (

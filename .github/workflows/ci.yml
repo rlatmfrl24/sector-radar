@@ -51,6 +51,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Check Worker generated types
+        run: npm run cf:ingest:types:check
+
+      - name: Test app and Pages Functions
+        run: npm run test:app
+
       - name: Typecheck Worker
         run: npm run typecheck:worker
 

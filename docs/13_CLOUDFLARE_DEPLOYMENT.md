@@ -68,6 +68,8 @@ The repository uses GitHub Actions for reproducible validation and Cloudflare de
 ```text
 Python 3.11 tests
 Frontend dependency install
+Worker generated type drift check
+App and Pages Functions tests
 Worker typecheck
 Worker unit tests
 Vite build
@@ -76,11 +78,19 @@ Vite build
 `deploy-cloudflare.yml` runs on pushes to `main` and manual dispatch:
 
 ```text
+npm run cf:ingest:types:check
+npm run test:app
 npm run test:worker
 npm run build
+wrangler deploy --config wrangler.ingest.jsonc --dry-run
+wrangler d1 migrations apply sector-radar --remote --config wrangler.jsonc
 wrangler pages deploy dist --project-name=sector-radar --branch=production
 wrangler deploy --config wrangler.ingest.jsonc
 ```
+
+The workflow is triggered by pushes to `main`, but the current Cloudflare Pages project uses
+`production` as its production branch label. Keep `--branch=production` unless the Pages project
+production branch is changed in Cloudflare.
 
 Required GitHub repository secrets:
 
@@ -161,14 +171,18 @@ Current endpoint:
 ```text
 GET /api/sectors
 GET /api/data/status
+GET /api/history
+GET /api/validation
 POST /api/refresh
 ```
 
-`GET /api/sectors` reads the latest `sector_metrics_daily` rows and returns the existing Sector Snapshot contract plus `data_connection`.
+`GET /api/sectors` reads the latest `sector_metrics_daily` rows and returns the existing Sector Snapshot contract plus `data_connection`, provider-specific `data_connections`, top-level `market_context`, and proxy leadership `concentration`.
+
+`GET /api/history` returns bounded RRG and market-context trails for UI path rendering. `GET /api/validation` returns `status = unvalidated` and `expose_probability = false` until a real walk-forward validation harness exists.
 
 `POST /api/refresh` is intentionally disabled on public Cloudflare Pages. It returns `refresh_unavailable_in_pages` because the Scheduled Worker owns Cloudflare refresh and enforces the upstream refresh gate.
 
-## 6. Scheduled Yahoo Research Ingestion
+## 6. Scheduled Research Ingestion
 
 The deployable ingestion path is a separate Worker:
 
@@ -182,25 +196,28 @@ Configuration:
 ```jsonc
 {
   "triggers": {
-    "crons": ["*/15 20-23 * * 1-5", "*/15 0-2 * * 2-6"]
+    "crons": ["*/15 23 * * SUN-FRI", "*/15 0 * * MON-FRI", "*/15 20-22 * * MON-FRI"]
   }
 }
 ```
 
-Cloudflare cron executes on UTC time. The configured windows cover the US post-close period across daylight saving time. The Worker still makes the final decision using `America/New_York` market time, and skips external Yahoo calls outside the optimized windows. The UI converts timestamps to the user's local timezone and currently surfaces KST when the browser timezone is `Asia/Seoul`.
+Cloudflare cron executes on UTC time. The configured windows cover the US post-close period across daylight saving time and the KRX KST morning retry window, including Monday KST after the weekend. The Worker still makes the final decision using `America/New_York` or `Asia/Seoul` market time, and skips external calls outside the optimized windows. The UI converts timestamps to the user's local timezone and currently surfaces KST when the browser timezone is `Asia/Seoul`.
 
 The Worker:
 
 - fetches Yahoo chart daily data through a Worker-compatible adapter
+- fetches FRED observations through REST when `FRED_API_KEY` is configured
+- fetches KRX OpenAPI reference trading fields when `KRX_API_KEY` is configured
 - treats Layer 1 and Layer 3 as daily-close sector snapshots, not 15 minute intraday signals
 - runs a post-close core phase for benchmark, sector ETFs, and Layer 2 Yahoo proxies
 - runs later post-close holding phases for representative holdings only, so breadth coverage fills quickly without refetching core ETFs every time
 - skips Yahoo calls when core and representative holdings already have the latest daily close
 - fetches existing symbols incrementally and only missing symbols with full history, so one new holding does not force a full-year rewrite for every symbol
 - writes raw long-format rows to `series_daily`
-- computes RS/RRG, breadth, participation, and Layer 2 proxy context
+- computes RS/RRG, multi-window RRG evidence, breadth, participation, and Layer 2 context
 - upserts latest sector snapshots into `sector_metrics_daily`
-- updates `data_refresh_status` with last attempt, last success, next allowed refresh, latest price date, symbol count, and rows upserted
+- upserts Layer 2 context cards into `market_context_daily`
+- updates `data_refresh_status` independently for `yahoo_finance`, `fred`, and `krx_openapi`
 - records each cron lifecycle in `run_log`, including stale `refreshing` recovery and final success/failure messages
 - keeps `validation_status = unvalidated` and `expose_probability = 0`
 
@@ -213,7 +230,10 @@ Default ingestion vars:
   "YAHOO_CORE_FETCH_BUDGET": "32",
   "YAHOO_FETCH_BUDGET": "38",
   "YAHOO_HOLDINGS_FETCH_BUDGET": "38",
-  "YAHOO_FETCH_CONCURRENCY": "2"
+  "YAHOO_FETCH_CONCURRENCY": "2",
+  "FRED_REFRESH_INTERVAL_MINUTES": "720",
+  "KRX_REFRESH_INTERVAL_MINUTES": "1440",
+  "KRX_CONTEXT_ENDPOINT": "http://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd,http://data-dbg.krx.co.kr/svc/apis/sto/ksq_bydd_trd"
 }
 ```
 
@@ -229,11 +249,13 @@ ETF participation: 20D RVOL, OBV slope, and CMF
 
 Recommended operating model:
 
-| Phase | New York time | Yahoo symbols | Purpose |
-|---|---:|---|---|
-| post_close_core | 16:20-16:45 ET | SPY, sector ETFs, optional benchmark, Layer 2 Yahoo proxies | Daily Layer 1/3 snapshot base |
-| post_close_holdings | 16:45-20:00 ET | Representative holdings missing the latest close | Breadth shard fill and snapshot recompute |
-| off_window | all other times | none | Preserve last successful snapshot and write only run log skip entries |
+| Provider | Window | Interval | Purpose |
+|---|---:|---:|---|
+| Yahoo core | 16:20-16:45 ET | 15 min gate inside cron | Daily Layer 1/3 snapshot base |
+| Yahoo holdings | 16:45-20:00 ET | 15 min gate inside cron | Breadth shard fill and snapshot recompute |
+| FRED | 16:45-18:00 ET | 720 min default | Official Layer 2 macro observations |
+| KRX | 08:20-09:25 KST | 1440 min default | Prior-day official/reference KRX context |
+| off_window | all other times | none | Preserve last successful snapshot and write run log skip entries |
 
 If an intraday preview is enabled later, keep it core-only and label it provisional in the UI.
 
@@ -252,6 +274,16 @@ Local scheduled testing:
 cd frontend
 npm run cf:ingest:dev
 ```
+
+Secrets:
+
+```bash
+cd frontend
+npx wrangler secret put FRED_API_KEY --config wrangler.ingest.jsonc
+npx wrangler secret put KRX_API_KEY --config wrangler.ingest.jsonc
+```
+
+FRED and KRX are optional at runtime. If a secret is missing or an endpoint shape changes, only that provider's `data_refresh_status` becomes failed/stale; Yahoo sector snapshots remain available.
 
 ## 7. Local Yahoo Research Refresh
 
@@ -273,19 +305,19 @@ Yahoo Finance refresh uses `yfinance` as a research adapter and enforces a 15 mi
 
 ## 8. Layer 2 Data Availability
 
-Layer 2 is split into three availability classes:
+Layer 2 is split by `source_class`:
 
-| Input | Cloudflare Yahoo status | Notes |
+| Input | Preferred source | Fallback | Notes |
 |---|---|---|
-| ETF Participation | Live | Uses sector ETF OHLCV for RVOL, OBV slope, and CMF. |
-| Dollar / FX Gate | Live/proxy | Uses Yahoo DXY and USD/KRW proxy symbols. Validate symbol availability before relying on it. |
-| VIX / Credit | Proxy | VIX is directly available; HY OAS is represented only through credit ETF proxies. |
-| Fed Policy / WALCL | Proxy/hold | Yahoo can provide rate/ETF proxies but not official balance sheet data. |
-| KRX foreign flow | Hold | Requires KRX or manual ledger, not Yahoo. |
-| MMF total assets | Proxy/hold | Cash ETF proxies are available; official MMF totals require FRED/ICI data. |
-| Margin debt / leverage | Proxy/hold | Leveraged ETF proxies are available; official margin debt requires external data. |
+| ETF Participation | Yahoo OHLCV | none | Uses sector ETF RVOL, OBV slope, and CMF. |
+| Fed Policy / WALCL | FRED `WALCL`, `DFF/SOFR`, `DGS2`, `DFII5` | Yahoo rate ETF proxy | `DFII5` is the nearest official TIPS real-yield series used here; `DFII2` is not a valid FRED series. |
+| Dollar / FX Gate | FRED `DEXKOUS`, `DTWEXBGS` | Yahoo DXY/USDKRW proxy | DXY symbol availability should remain monitored. |
+| VIX / Credit | FRED `BAMLH0A0HYM2`, `VIXCLS` | Yahoo HYG/JNK/LQD/TLT proxy | HY OAS should not be represented as ETF data. |
+| KRX foreign flow | separate KRX investor-flow source needed | excluded from active Layer 2 | Current KRX OpenAPI stock endpoints expose daily trading value, volume, and market cap. Foreign-flow is deferred for US Sector Radar. |
+| Reserve / cash proxy | FRED `WRESBAL` | Yahoo cash ETF proxy | WRESBAL is a reserve-balance proxy and must not be labelled as official MMF total assets. |
+| Credit / leverage proxy | FINRA monthly margin statistics or FRED broker/dealer margin-loan proxy | Yahoo leveraged ETF proxy | ETF proxy is acceptable for research display, but it is not margin debt. |
 
-Proxy signals must be displayed as proxy signals in `source_metrics` and UI copy. They must not be presented as official source data.
+Proxy signals must be displayed as proxy signals in `source_metrics`, `market_context.source_class`, and UI copy. They must not be presented as official source data.
 
 ## 9. Safety Policy
 

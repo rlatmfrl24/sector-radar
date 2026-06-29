@@ -1,6 +1,7 @@
 import type {
   DataRefreshStatusRow,
   InstrumentRow,
+  MarketContextRow,
   RefreshStore,
   RunLogRow,
   SectorMetricRow,
@@ -19,6 +20,23 @@ interface D1SeriesRow {
   fetched_at: string;
 }
 
+interface D1MarketContextRow {
+  market: string;
+  context_code: string;
+  date: string;
+  state: string;
+  transition: string;
+  availability: MarketContextRow["availability"];
+  source_class: MarketContextRow["source_class"];
+  title: string;
+  source: string;
+  meaning: string;
+  evidence_json: string;
+  warnings_json: string;
+  data_freshness_json: string;
+  computed_at: string;
+}
+
 export class D1RefreshStore implements RefreshStore {
   constructor(private readonly db: D1Database) {}
 
@@ -28,6 +46,16 @@ export class D1RefreshStore implements RefreshStore {
       .bind(provider)
       .first<DataRefreshStatusRow>();
     return row ?? null;
+  }
+
+  async readStatuses(providers: string[]): Promise<DataRefreshStatusRow[]> {
+    if (providers.length === 0) return [];
+    const placeholders = providers.map(() => "?").join(", ");
+    const rows = await this.db
+      .prepare(`SELECT * FROM data_refresh_status WHERE provider IN (${placeholders})`)
+      .bind(...providers)
+      .all<DataRefreshStatusRow>();
+    return rows.results ?? [];
   }
 
   async upsertStatus(row: DataRefreshStatusRow): Promise<void> {
@@ -263,6 +291,90 @@ export class D1RefreshStore implements RefreshStore {
           ),
       ),
     );
+  }
+
+  async upsertMarketContext(rows: MarketContextRow[]): Promise<void> {
+    await this.runInChunks(
+      rows.map((row) =>
+        this.db
+          .prepare(
+            `
+              INSERT INTO market_context_daily (
+                market, context_code, date, state, transition, availability, source_class,
+                title, source, meaning, evidence_json, warnings_json, data_freshness_json, computed_at
+              )
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(market, context_code, date) DO UPDATE SET
+                state = excluded.state,
+                transition = excluded.transition,
+                availability = excluded.availability,
+                source_class = excluded.source_class,
+                title = excluded.title,
+                source = excluded.source,
+                meaning = excluded.meaning,
+                evidence_json = excluded.evidence_json,
+                warnings_json = excluded.warnings_json,
+                data_freshness_json = excluded.data_freshness_json,
+                computed_at = excluded.computed_at
+            `,
+          )
+          .bind(
+            row.market,
+            row.context_code,
+            row.date,
+            row.state,
+            row.transition,
+            row.availability,
+            row.source_class,
+            row.title,
+            row.source,
+            row.meaning,
+            row.evidence_json,
+            row.warnings_json,
+            row.data_freshness_json,
+            row.computed_at,
+          ),
+      ),
+    );
+  }
+
+  async readLatestMarketContext(market: string): Promise<MarketContextRow[]> {
+    const result = await this.db
+      .prepare(
+        `
+          SELECT context.*
+          FROM market_context_daily context
+          INNER JOIN (
+            SELECT context_code, MAX(date) AS latest_date
+            FROM market_context_daily
+            WHERE market = ?
+            GROUP BY context_code
+          ) latest
+            ON latest.context_code = context.context_code
+           AND latest.latest_date = context.date
+          WHERE context.market = ?
+          ORDER BY context.context_code
+        `,
+      )
+      .bind(market, market)
+      .all<D1MarketContextRow>();
+
+    return (result.results ?? []).map((row) => ({
+      market: row.market,
+      context_code: row.context_code,
+      date: row.date,
+      state: row.state,
+      transition: row.transition,
+      availability: row.availability,
+      source_class: row.source_class,
+      title: row.title,
+      source: row.source,
+      meaning: row.meaning,
+      evidence_json: row.evidence_json,
+      warnings_json: row.warnings_json,
+      data_freshness_json: row.data_freshness_json,
+      computed_at: row.computed_at,
+    }));
   }
 
   private async runInChunks(statements: D1PreparedStatement[]): Promise<void> {

@@ -4,6 +4,8 @@
 
 전체 Macro / Sector / Stock Intelligence를 한 번에 만들지 않습니다. 첫 4~6주는 **Sector Radar MVP**에 집중합니다.
 
+외부 벤치마크 프로젝트에서 흡수할 화면과 보류할 기능의 결정 로그는 `docs/14_MARKET_DASHBOARD_BENCHMARK.md`에 둡니다.
+
 ```text
 1차 목표: 섹터 리더십 탐지
 2차 목표: 가짜 리더십 / 후반부 리더십 탐지

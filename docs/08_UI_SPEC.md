@@ -44,8 +44,8 @@ Overview
   ├─ Compact Top Bar: benchmark, as_of, source, validation gate, probability gate
   ├─ Screen Switch: 흐름·여력 / 주도·섹터
   ├─ Screen A: Layer 1 흐름 + Layer 2 여력
-  │   ├─ Layer 1: flow summary, leading/improving/breadth/warnings/coverage
-  │   ├─ Layer 1: RS distribution sparkline
+  │   ├─ Layer 1: flow readout strip (leadership, breadth, warnings, reconciliation)
+  │   ├─ Layer 1: evidence panel (RRG quadrant mix, RS distribution, clusters, breadth, checkpoints)
   │   ├─ Layer 2: live ETF participation snapshot
   │   └─ Layer 2: Yahoo live/proxy/hold liquidity inputs without fake source claims
   ├─ Screen B: Layer 3 주도 (섹터)
@@ -92,6 +92,62 @@ Weakening
 Lagging
 - XLU Utilities
 - XLP Staples
+```
+
+### 3.2.1 Layer 1 Flow Evidence
+
+Layer 1은 같은 숫자를 여러 카드에서 반복하지 않고, 역할을 분리합니다.
+
+```text
+Overview card:
+  - 현재 흐름 판정
+  - 주도/순환 섹터 수
+  - breadth 정합성
+  - warning count
+  - reconciliation label
+
+Evidence panel:
+  - RRG quadrant mix
+  - RS distribution sparkline
+  - leading/rotation cluster
+  - warning cluster
+  - breadth profile
+  - next checkpoints
+```
+
+벤치마크 UI에서 흡수할 수 있는 방향은 "요약 문장 + 근거 카드"의 분리입니다. Layer 1은 가격 흐름, 폭, 변동성, 정합성을 빠르게 확인하는 곳이므로 다음 데이터는 후속 수집 후보로 둡니다.
+
+```text
+Benchmark tape:
+  - benchmark close
+  - 1D return
+  - 52-week range position
+
+Risk/volatility:
+  - VIX latest state
+  - realized volatility proxy
+
+Breadth quality:
+  - representative holdings coverage
+  - advancing ratio
+  - pct_above_20/50/200ma freshness
+```
+
+위 항목은 provider/API/freshness가 연결되기 전에는 화면에 수치처럼 노출하지 않습니다. 연결 전에는 `unknown`, `manual_check`, `proxy`로 명확히 표시합니다.
+
+현재 Layer 1 추가 수집/표시:
+
+```text
+Yahoo chart provider:
+  - SPY: benchmark tape, 1D/1W/1M/3M return, 52w range position
+  - QQQ: growth leadership proxy vs SPY
+  - RSP: equal-weight breadth proxy vs SPY
+  - IWM: small-cap risk appetite proxy vs SPY
+  - ^VIX: volatility pressure proxy
+
+UI:
+  - 좌측 readout: Tape, Breadth, Vol, 정합성
+  - 우측 evidence: Market Tape, Risk/Vol, Breadth Proxy, RRG mix, RS distribution, checkpoints
 ```
 
 ### 3.3 Watchlist Cards

@@ -1,4 +1,11 @@
-import { readDataConnection } from "../_shared/dataConnection";
+import { readDataConnection, readDataConnections } from "../_shared/dataConnection";
+import {
+  buildLayerOneFlowSnapshot,
+  LAYER_ONE_SERIES,
+  type LayerOneSeriesRow,
+} from "../_shared/layerOneFlow";
+import { readLatestMarketContext } from "../_shared/marketContext";
+import { buildRadarDerived } from "../_shared/radarDerived";
 
 interface Env {
   DB: D1Database;
@@ -53,11 +60,28 @@ interface SourceMetrics {
 
 export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   const dataConnection = await readDataConnection(env);
+  const dataConnections = await readDataConnections(env);
+  const marketContext = await readLatestMarketContext(env);
   const latest = await env.DB.prepare(
     "SELECT MAX(date) AS as_of FROM sector_metrics_daily",
   ).first<{ as_of: string | null }>();
 
   if (!latest?.as_of) {
+    const concentration = emptyConcentration();
+    const layer1Flow = buildLayerOneFlowSnapshot({
+      asOf: null,
+      rows: [],
+      sectors: [],
+    });
+    const derived = buildRadarDerived({
+      asOf: null,
+      concentration,
+      dataConnection,
+      dataConnections,
+      marketContext,
+      sectors: [],
+    });
+
     return json({
       as_of: null,
       benchmark: "SPY",
@@ -65,6 +89,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       validation: { status: "unvalidated", expose_probability: false },
       source: "d1",
       data_connection: dataConnection,
+      data_connections: dataConnections,
+      market_context: marketContext,
+      layer1_flow: layer1Flow,
+      concentration,
+      ...derived,
     });
   }
 
@@ -88,6 +117,22 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
     .all<SectorMetricRow>();
 
   const sectors = (rows.results ?? []).map(toSectorSnapshot);
+  const layerOneRows = await readLayerOneSeries(env, latest.as_of);
+  const layer1Flow = buildLayerOneFlowSnapshot({
+    asOf: latest.as_of,
+    rows: layerOneRows,
+    sectors,
+  });
+  const concentration = buildConcentration(sectors);
+  const derived = buildRadarDerived({
+    asOf: latest.as_of,
+    concentration,
+    dataConnection,
+    dataConnections,
+    marketContext,
+    sectors,
+  });
+
   return json({
     as_of: latest.as_of,
     benchmark: sectors[0]?.benchmark ?? "SPY",
@@ -95,6 +140,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
     validation: { status: "unvalidated", expose_probability: false },
     source: "d1",
     data_connection: dataConnection,
+    data_connections: dataConnections,
+    market_context: marketContext,
+    layer1_flow: layer1Flow,
+    concentration,
+    ...derived,
   });
 };
 
@@ -206,4 +256,80 @@ function json(body: unknown): Response {
       "cache-control": "no-store",
     },
   });
+}
+
+function buildConcentration(sectors: ReturnType<typeof toSectorSnapshot>[]) {
+  const weights = sectors
+    .map((sector) => ({
+      sector_code: sector.sector_code,
+      weight: Math.max(0, Number(sector.modules.relative_strength.evidence.rs_ratio) - 100),
+    }))
+    .filter((item) => item.weight > 0);
+  const total = weights.reduce((sum, item) => sum + item.weight, 0);
+
+  if (total <= 0) return emptyConcentration(["no_positive_rs_leadership_weight"]);
+
+  const normalized = weights
+    .map((item) => ({ ...item, share: item.weight / total }))
+    .sort((a, b) => b.share - a.share);
+  const hhi = normalized.reduce((sum, item) => sum + item.share ** 2, 0);
+  const top3 = normalized.slice(0, 3).reduce((sum, item) => sum + item.share, 0);
+
+  return {
+    method: "rs_leadership_proxy",
+    source_class: "proxy",
+    hhi: round(hhi),
+    effective_sector_count: round(1 / hhi),
+    top1: normalized[0]?.sector_code ?? null,
+    top1_contribution: round(normalized[0]?.share ?? null),
+    top3_contribution: round(top3),
+    warnings: [
+      "market_cap_contribution_not_available",
+      ...(hhi > 0.35 || top3 > 0.75 ? ["narrow_leadership_proxy"] : []),
+    ],
+  };
+}
+
+async function readLayerOneSeries(env: Env, asOf: string): Promise<LayerOneSeriesRow[]> {
+  const startDate = addDays(asOf, -370);
+  const placeholders = LAYER_ONE_SERIES.map(() => "?").join(", ");
+  const rows = await env.DB.prepare(
+    `
+      SELECT series_id, date, field, value, source, fetched_at
+      FROM series_daily
+      WHERE date >= ?
+        AND series_id IN (${placeholders})
+        AND field = 'close'
+      ORDER BY series_id, date
+    `,
+  )
+    .bind(startDate, ...LAYER_ONE_SERIES)
+    .all<LayerOneSeriesRow>();
+  return rows.results ?? [];
+}
+
+function addDays(date: string, days: number) {
+  const parsed = new Date(`${date}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime())) return date;
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return parsed.toISOString().slice(0, 10);
+}
+
+function emptyConcentration(warnings: string[] = ["insufficient_sector_snapshots"]) {
+  return {
+    method: "rs_leadership_proxy",
+    source_class: "proxy",
+    hhi: null,
+    effective_sector_count: null,
+    top1: null,
+    top1_contribution: null,
+    top3_contribution: null,
+    warnings,
+  };
+}
+
+function round(value: number | null, decimals = 4) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
 }

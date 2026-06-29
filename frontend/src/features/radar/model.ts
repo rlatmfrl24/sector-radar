@@ -1,4 +1,4 @@
-import type { SectorSnapshot } from "../../types";
+import type { MarketContextAvailability, SectorSnapshot } from "../../types";
 
 export type RadarView = "flow" | "leadership";
 
@@ -10,7 +10,7 @@ export const quadrantLabels: Record<SectorSnapshot["quadrant"], string> = {
   unknown: "Unknown",
 };
 
-export type LiquidityAvailability = "live" | "proxy" | "hold";
+export type LiquidityAvailability = MarketContextAvailability;
 
 export const liquidityInputs: Array<{
   availability: LiquidityAvailability;
@@ -46,26 +46,26 @@ export const liquidityInputs: Array<{
   {
     availability: "hold",
     code: "S04",
-    title: "외국인 자금",
-    source: "KRX / flow ledger",
+    title: "외국인 자금 (보류)",
+    source: "KRX investor-flow source needed",
     meaning: "수급 게이트와 한계매수자 추적",
-    warning: "KRX 외국인 순매수는 Yahoo에서 직접 갱신할 수 없습니다.",
+    warning: "현재 연결된 KRX 일별매매 endpoint로는 외국인 순매수 원자료를 안정적으로 갱신할 수 없습니다.",
   },
   {
     availability: "proxy",
     code: "S05",
-    title: "대기자금·MMF",
-    source: "Yahoo cash ETF proxy / FRED later",
-    meaning: "현금 회전 재개 가능성",
-    warning: "공식 MMF 총자산은 FRED/ICI 계열 데이터가 필요합니다.",
+    title: "예비금·현금 Proxy",
+    source: "FRED WRESBAL / Yahoo cash ETF proxy",
+    meaning: "연준 지급준비금과 초단기 채권 ETF로 현금성 여력을 proxy",
+    warning: "WRESBAL은 공식 MMF 총자산이 아니므로 reserve/cash proxy로만 해석합니다.",
   },
   {
     availability: "proxy",
     code: "S06",
-    title: "신용·레버리지",
-    source: "Yahoo leverage ETF proxy / manual later",
-    meaning: "마진 과열과 반대매매 위험",
-    warning: "Margin debt 원자료는 Yahoo에서 직접 갱신할 수 없습니다.",
+    title: "레버리지 ETF Proxy",
+    source: "Yahoo leverage ETF proxy / FRED-FINRA later",
+    meaning: "레버리지 ETF 수요로 위험선호와 과열을 보조 확인",
+    warning: "Margin debt 원자료가 아니며 FINRA/FRED 연결 전까지 ETF proxy로만 해석합니다.",
   },
 ];
 

@@ -8,12 +8,16 @@
     "api": "python -m sector_radar.api.local_server",
     "build": "tsc -b && npm run typecheck:worker && vite build",
     "preview": "vite preview --host 127.0.0.1",
+    "source:probe": "node scripts/probe-market-sources.mjs",
     "cf:dev": "wrangler pages dev dist --d1 DB=sector-radar-local",
     "cf:deploy": "wrangler pages deploy dist",
     "cf:ingest:dev": "wrangler dev --config wrangler.ingest.jsonc --test-scheduled",
     "cf:ingest:deploy": "wrangler deploy --config wrangler.ingest.jsonc",
     "cf:ingest:types": "wrangler types workers/worker-configuration.d.ts --config wrangler.ingest.jsonc",
+    "cf:ingest:types:check": "wrangler types workers/worker-configuration.d.ts --config wrangler.ingest.jsonc --check",
+    "cf:migrations:apply": "wrangler d1 migrations apply sector-radar --remote --config wrangler.jsonc",
     "typecheck:worker": "tsc -p tsconfig.worker.json",
+    "test:app": "vitest run functions src",
     "test:worker": "vitest run workers"
   },
   "dependencies": {

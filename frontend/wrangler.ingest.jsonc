@@ -5,7 +5,7 @@
   "compatibility_date": "2026-06-24",
   "compatibility_flags": ["nodejs_compat"],
   "triggers": {
-    "crons": ["*/15 20-23 * * 1-5", "*/15 0-2 * * 2-6"]
+    "crons": ["*/15 23 * * SUN-FRI", "*/15 0 * * MON-FRI", "*/15 20-22 * * MON-FRI"]
   },
   "observability": {
     "enabled": true,
@@ -17,13 +17,17 @@
     "YAHOO_CORE_FETCH_BUDGET": "32",
     "YAHOO_FETCH_BUDGET": "38",
     "YAHOO_HOLDINGS_FETCH_BUDGET": "38",
-    "YAHOO_FETCH_CONCURRENCY": "2"
+    "YAHOO_FETCH_CONCURRENCY": "2",
+    "FRED_REFRESH_INTERVAL_MINUTES": "720",
+    "KRX_REFRESH_INTERVAL_MINUTES": "1440",
+    "KRX_CONTEXT_ENDPOINT": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd,https://data-dbg.krx.co.kr/svc/apis/sto/ksq_bydd_trd"
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "sector-radar",
-      "database_id": "211ed515-584b-405a-98c5-5a781229ee79"
+      "database_id": "211ed515-584b-405a-98c5-5a781229ee79",
+      "migrations_dir": "./migrations"
     }
   ]
 }

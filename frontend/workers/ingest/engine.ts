@@ -1,5 +1,6 @@
-import type { PriceBar, SectorMetricRow, SeriesRow } from "./contracts";
-import { BENCHMARK, LAYER_TWO_INPUTS, MARKET, SECTORS } from "./universe";
+import type { MarketContextCard, PriceBar, SectorMetricRow, SeriesRow } from "./contracts";
+import { buildMarketContextFromSeriesRows } from "./marketContext";
+import { BENCHMARK, MARKET, SECTORS } from "./universe";
 
 const RS_WINDOW = 50;
 const MOMENTUM_WINDOW = 10;
@@ -25,18 +26,6 @@ interface ModuleSnapshot {
   state: string;
   transition: string;
   strength: number;
-  evidence: Record<string, number | string | null>;
-  warnings: string[];
-}
-
-interface MarketContextCard {
-  code: string;
-  title: string;
-  availability: "live" | "proxy" | "hold";
-  state: string;
-  transition: string;
-  source: string;
-  meaning: string;
   evidence: Record<string, number | string | null>;
   warnings: string[];
 }
@@ -75,7 +64,7 @@ export function buildSectorMetricRows(
 ): SectorMetricRow[] {
   const series = toSeriesMap(seriesRows);
   const benchmark = series[BENCHMARK] ?? [];
-  const marketContext = buildMarketContext(series);
+  const marketContext = buildMarketContextFromSeriesRows(seriesRows, computedAt);
   const rows: SectorMetricRow[] = [];
 
   for (const sector of SECTORS) {
@@ -192,6 +181,7 @@ function buildRelativeStrength(sectorBars: DailyBar[], benchmarkBars: DailyBar[]
       rs_momentum: round(latestMomentum),
       rs_window: RS_WINDOW,
       momentum_window: MOMENTUM_WINDOW,
+      ...buildMultiWindowRrgEvidence(sectorBars, benchmarkBars),
     },
     warnings,
   };
@@ -286,55 +276,6 @@ function buildParticipation(bars: DailyBar[]): ModuleSnapshot {
   };
 }
 
-function buildMarketContext(series: SeriesMap): MarketContextCard[] {
-  return LAYER_TWO_INPUTS.map((input) => {
-    if (input.availability === "hold") {
-      return {
-        code: input.code,
-        title: input.title,
-        availability: input.availability,
-        state: "held",
-        transition: "external_source_needed",
-        source: input.source,
-        meaning: input.meaning,
-        evidence: {},
-        warnings: [input.warning ?? "external_source_needed"],
-      };
-    }
-
-    const returns = input.yahooSymbols
-      .map((symbol) => {
-        const value = returnOverBars(series[symbol] ?? [], 21);
-        return value === null ? null : [symbol, value] as const;
-      })
-      .filter((entry): entry is readonly [string, number] => entry !== null);
-    const evidence = Object.fromEntries(returns.map(([symbol, value]) => [`${symbol}_ret_1m`, round(value)]));
-    const averageReturn = average(returns.map(([, value]) => value));
-    const state =
-      input.code === "S02"
-        ? dollarState(evidence)
-        : averageReturn === null
-          ? "unknown"
-          : averageReturn >= 0.03
-            ? "supportive"
-            : averageReturn <= -0.03
-              ? "pressure"
-              : "neutral";
-
-    return {
-      code: input.code,
-      title: input.title,
-      availability: input.availability,
-      state,
-      transition: averageReturn === null ? "unknown" : averageReturn >= 0 ? "strengthening" : "weakening",
-      source: input.source,
-      meaning: input.meaning,
-      evidence,
-      warnings: input.warning ? [input.warning] : [],
-    };
-  });
-}
-
 function buildRulebook({
   breadth,
   participation,
@@ -408,6 +349,7 @@ function buildRulebook({
 function toSeriesMap(rows: SeriesRow[]): SeriesMap {
   const bySymbol = new Map<string, Map<string, DailyBar>>();
   for (const row of rows) {
+    if (!isPriceField(row.field)) continue;
     const symbol = normalizeSymbol(row.series_id);
     const byDate = bySymbol.get(symbol) ?? new Map<string, DailyBar>();
     const day = byDate.get(row.date) ?? { date: row.date };
@@ -446,6 +388,48 @@ function rollingRatio(values: Array<{ date: string; value: number }>, window: nu
       return { date: point.date, value: (100 * point.value) / avg };
     })
     .filter(isDatedValue);
+}
+
+function buildMultiWindowRrgEvidence(sectorBars: DailyBar[], benchmarkBars: DailyBar[]) {
+  const windows = [
+    ["1m", 21],
+    ["3m", 63],
+    ["6m", 126],
+    ["12m", 252],
+  ] as const;
+  const evidence: Record<string, number | string | null> = {};
+
+  for (const [label, window] of windows) {
+    const snapshot = relativeStrengthForWindow(sectorBars, benchmarkBars, window, MOMENTUM_WINDOW);
+    evidence[`rrg_${label}_ratio`] = round(snapshot.ratio);
+    evidence[`rrg_${label}_momentum`] = round(snapshot.momentum);
+    evidence[`rrg_${label}_quadrant`] = classifyQuadrant(snapshot.ratio, snapshot.momentum);
+  }
+
+  return evidence;
+}
+
+function relativeStrengthForWindow(
+  sectorBars: DailyBar[],
+  benchmarkBars: DailyBar[],
+  rsWindow: number,
+  momentumWindow: number,
+) {
+  const benchmarkByDate = new Map(benchmarkBars.map((bar) => [bar.date, bar.close]));
+  const rsRaw = sectorBars
+    .map((bar) => {
+      const benchmarkClose = benchmarkByDate.get(bar.date);
+      if (!isPositive(bar.close) || !isPositive(benchmarkClose)) return null;
+      return { date: bar.date, value: bar.close / benchmarkClose };
+    })
+    .filter(isDatedValue);
+  const ratioSeries = rollingRatio(rsRaw, rsWindow);
+  const momentumSeries = rollingRatio(ratioSeries, momentumWindow);
+
+  return {
+    ratio: lastValue(ratioSeries),
+    momentum: lastValue(momentumSeries),
+  };
 }
 
 function percentAboveMa(seriesList: DailyBar[][], window: (typeof BREADTH_WINDOWS)[number]) {
@@ -533,15 +517,6 @@ function strengthFromQuadrant(quadrant: string) {
   return 0;
 }
 
-function dollarState(evidence: Record<string, number | string | null>) {
-  const dxy = Number(evidence["DX-Y.NYB_ret_1m"]);
-  const krw = Number(evidence["KRW=X_ret_1m"]);
-  if (!Number.isFinite(dxy) && !Number.isFinite(krw)) return "unknown";
-  if ((Number.isFinite(dxy) && dxy > 0.02) || (Number.isFinite(krw) && krw > 0.02)) return "pressure";
-  if ((Number.isFinite(dxy) && dxy < -0.02) || (Number.isFinite(krw) && krw < -0.02)) return "supportive";
-  return "neutral";
-}
-
 function latestCommonDate(seriesList: DailyBar[][]) {
   const dates = seriesList.map((bars) => latestDateOf(bars));
   if (dates.some((date) => date === null)) return null;
@@ -553,13 +528,10 @@ function latestDateOf(bars: DailyBar[]) {
 }
 
 function latestMarketContextDate(cards: MarketContextCard[]) {
-  for (const card of cards) {
-    const dates = Object.entries(card.evidence)
-      .filter(([key]) => key.endsWith("_latest_date"))
-      .map(([, value]) => String(value));
-    if (dates.length > 0) return dates.sort().at(-1);
-  }
-  return null;
+  const dates = cards
+    .map((card) => card.data_freshness.latest_date)
+    .filter((date): date is string => typeof date === "string" && date.length > 0);
+  return dates.sort().at(-1) ?? null;
 }
 
 function returnOverBars(bars: DailyBar[], periods: number) {
@@ -606,6 +578,10 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isDatedValue(value: { date: string; value: number } | null): value is { date: string; value: number } {
   return value !== null;
+}
+
+function isPriceField(value: string): value is keyof Omit<DailyBar, "date"> {
+  return value === "open" || value === "high" || value === "low" || value === "close" || value === "volume";
 }
 
 function normalizeSymbol(symbol: string) {

@@ -32,7 +32,7 @@ export interface PriceBar {
 export interface SeriesRow {
   series_id: string;
   date: string;
-  field: "open" | "high" | "low" | "close" | "volume";
+  field: string;
   value: number;
   source: string;
   fetched_at: string;
@@ -87,6 +87,40 @@ export interface SectorMetricRow {
   computed_at: string;
 }
 
+export type MarketContextAvailability = "live" | "proxy" | "manual" | "hold";
+export type MarketContextSourceClass = "official" | "proxy" | "manual" | "held";
+
+export interface MarketContextCard {
+  code: string;
+  title: string;
+  availability: MarketContextAvailability;
+  state: string;
+  transition: string;
+  source_class: MarketContextSourceClass;
+  source: string;
+  meaning: string;
+  evidence: Record<string, number | string | null>;
+  warnings: string[];
+  data_freshness: Record<string, number | string | null>;
+}
+
+export interface MarketContextRow {
+  market: string;
+  context_code: string;
+  date: string;
+  state: string;
+  transition: string;
+  availability: MarketContextAvailability;
+  source_class: MarketContextSourceClass;
+  title: string;
+  source: string;
+  meaning: string;
+  evidence_json: string;
+  warnings_json: string;
+  data_freshness_json: string;
+  computed_at: string;
+}
+
 export interface ProviderFailure {
   symbol: string;
   message: string;
@@ -97,6 +131,11 @@ export interface ProviderFailure {
 
 export interface ProviderFetchResult {
   bars: PriceBar[];
+  failures: ProviderFailure[];
+}
+
+export interface ProviderSeriesResult {
+  rows: SeriesRow[];
   failures: ProviderFailure[];
 }
 
@@ -116,12 +155,15 @@ export interface MarketDataProvider {
 
 export interface RefreshStore {
   readStatus(provider: string): Promise<DataRefreshStatusRow | null>;
+  readStatuses(providers: string[]): Promise<DataRefreshStatusRow[]>;
   upsertStatus(row: DataRefreshStatusRow): Promise<void>;
   upsertRunLog(row: RunLogRow): Promise<void>;
   upsertInstruments(rows: InstrumentRow[]): Promise<void>;
   upsertSeries(rows: SeriesRow[]): Promise<number>;
   readSeries(symbols: string[], startDate: string): Promise<SeriesRow[]>;
   upsertSectorMetrics(rows: SectorMetricRow[]): Promise<void>;
+  upsertMarketContext(rows: MarketContextRow[]): Promise<void>;
+  readLatestMarketContext(market: string): Promise<MarketContextRow[]>;
 }
 
 export interface RefreshOutcome {

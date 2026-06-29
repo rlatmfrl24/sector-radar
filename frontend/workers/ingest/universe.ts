@@ -17,9 +17,37 @@ export interface LayerTwoInput {
   warning?: string;
 }
 
+export interface LayerOneInput {
+  symbol: string;
+  title: string;
+  source: string;
+  meaning: string;
+}
+
 export const MARKET = "US";
 export const BENCHMARK = "SPY";
 export const OPTIONAL_BENCHMARKS = ["QQQ"];
+
+export const LAYER_ONE_INPUTS: LayerOneInput[] = [
+  {
+    symbol: "RSP",
+    title: "Equal-weight S&P 500 breadth proxy",
+    source: "Yahoo Finance chart",
+    meaning: "SPY 대비 equal-weight 시장 폭을 확인합니다.",
+  },
+  {
+    symbol: "IWM",
+    title: "Small-cap risk appetite proxy",
+    source: "Yahoo Finance chart",
+    meaning: "SPY 대비 중소형주 위험선호를 확인합니다.",
+  },
+  {
+    symbol: "^VIX",
+    title: "Volatility proxy",
+    source: "Yahoo Finance chart",
+    meaning: "Layer 1 변동성 압력을 확인합니다.",
+  },
+];
 
 export const SECTORS: SectorDefinition[] = [
   {
@@ -100,16 +128,16 @@ export const LAYER_TWO_INPUTS: LayerTwoInput[] = [
   {
     code: "S01",
     title: "중앙은행 정책",
-    source: "FRED / policy ledger",
+    source: "FRED official / Yahoo rate ETF fallback",
     meaning: "금리·대차대조표 기반 유동성 여력",
     yahooSymbols: ["^IRX", "^TNX", "TLT", "IEF"],
     availability: "proxy",
-    warning: "Fed balance sheet / WALCL 원자료는 Yahoo가 아니며 금리 ETF proxy만 사용합니다.",
+    warning: "FRED 미연결 시 Fed balance sheet / WALCL 대신 금리 ETF proxy만 사용합니다.",
   },
   {
     code: "S02",
     title: "달러·FX 게이트",
-    source: "Yahoo: DXY / USDKRW proxy",
+    source: "FRED official / Yahoo DXY-USDKRW fallback",
     meaning: "달러와 원화 흐름으로 위험자산 압박을 확인",
     yahooSymbols: ["DX-Y.NYB", "KRW=X"],
     availability: "live",
@@ -117,43 +145,46 @@ export const LAYER_TWO_INPUTS: LayerTwoInput[] = [
   {
     code: "S03",
     title: "글로벌 신용환경",
-    source: "Yahoo: VIX + credit ETF proxy",
+    source: "FRED official / Yahoo credit ETF fallback",
     meaning: "변동성과 HY/IG ETF 상대 흐름으로 신용 압력을 proxy",
     yahooSymbols: ["^VIX", "HYG", "JNK", "LQD", "TLT"],
     availability: "proxy",
-    warning: "HY OAS 원자료는 Yahoo가 아니므로 ETF proxy로만 해석합니다.",
+    warning: "FRED 미연결 시 HY OAS 원자료 대신 ETF proxy로만 해석합니다.",
   },
   {
     code: "S04",
-    title: "외국인 자금",
-    source: "KRX / flow ledger",
+    title: "외국인 자금 (보류)",
+    source: "KRX investor-flow source needed",
     meaning: "수급 게이트와 한계매수자 추적",
     yahooSymbols: [],
     availability: "hold",
-    warning: "KRX 외국인 순매수 데이터는 Yahoo에서 직접 갱신할 수 없습니다.",
+    warning: "현재 연결된 KRX 일별매매 endpoint로는 외국인 순매수 원자료를 안정적으로 갱신할 수 없습니다.",
   },
   {
     code: "S05",
-    title: "대기자금·MMF",
-    source: "Yahoo ETF proxy / FRED later",
-    meaning: "현금성 ETF 흐름으로 대기자금 회전 가능성을 proxy",
+    title: "예비금·현금 Proxy",
+    source: "FRED WRESBAL / Yahoo cash ETF fallback",
+    meaning: "연준 지급준비금과 초단기 채권 ETF로 현금성 여력을 proxy",
     yahooSymbols: ["BIL", "SGOV", "SHV"],
     availability: "proxy",
-    warning: "공식 MMF 총자산은 FRED/ICI 계열 데이터가 필요합니다.",
+    warning: "WRESBAL은 reserve balance proxy이며 공식 MMF 총자산으로 표시하지 않습니다.",
   },
   {
     code: "S06",
-    title: "신용·레버리지",
-    source: "manual ledger / leverage ETF proxy",
-    meaning: "마진 과열과 레버리지 수요를 보조 신호로 확인",
+    title: "레버리지 ETF Proxy",
+    source: "Yahoo leverage ETF proxy / FRED-FINRA later",
+    meaning: "레버리지 ETF 수요로 위험선호와 과열을 보조 확인",
     yahooSymbols: ["TQQQ", "SQQQ", "SPXL", "SPXS"],
     availability: "proxy",
-    warning: "Margin debt 원자료는 Yahoo에서 직접 갱신할 수 없습니다.",
+    warning: "Margin debt 원자료가 아니며 FINRA/FRED 연결 전까지 ETF proxy로만 해석합니다.",
   },
 ];
 
 export function allSymbols(): string[] {
   const symbols = new Set<string>([BENCHMARK, ...OPTIONAL_BENCHMARKS]);
+  for (const input of LAYER_ONE_INPUTS) {
+    symbols.add(input.symbol);
+  }
   for (const sector of SECTORS) {
     symbols.add(sector.symbol);
     sector.representativeHoldings.forEach((symbol) => symbols.add(symbol));
@@ -172,14 +203,19 @@ export function layerTwoYahooSymbols(): string[] {
   return uniqueSymbols(LAYER_TWO_INPUTS.flatMap((input) => input.yahooSymbols));
 }
 
+export function layerOneYahooSymbols(): string[] {
+  return uniqueSymbols(LAYER_ONE_INPUTS.map((input) => input.symbol));
+}
+
 export function representativeHoldingSymbols(): string[] {
   return uniqueSymbols(SECTORS.flatMap((sector) => sector.representativeHoldings));
 }
 
 export function buildFetchSymbols(now: Date, budget: number): string[] {
   const core = coreSymbols();
+  const layerOne = layerOneYahooSymbols().filter((symbol) => !core.includes(symbol));
   const layerTwo = layerTwoYahooSymbols().filter((symbol) => !core.includes(symbol));
-  const required = uniqueSymbols([...core, ...OPTIONAL_BENCHMARKS, ...layerTwo]);
+  const required = uniqueSymbols([...core, ...OPTIONAL_BENCHMARKS, ...layerOne, ...layerTwo]);
   if (required.length >= budget) {
     return required.slice(0, budget);
   }
@@ -191,7 +227,12 @@ export function buildFetchSymbols(now: Date, budget: number): string[] {
 }
 
 export function buildCoreRefreshSymbols(budget: number): string[] {
-  const required = uniqueSymbols([...coreSymbols(), ...OPTIONAL_BENCHMARKS, ...layerTwoYahooSymbols()]);
+  const required = uniqueSymbols([
+    ...coreSymbols(),
+    ...OPTIONAL_BENCHMARKS,
+    ...layerOneYahooSymbols(),
+    ...layerTwoYahooSymbols(),
+  ]);
   return required.slice(0, Math.max(coreSymbols().length, budget));
 }
 
@@ -227,6 +268,12 @@ export function buildInstrumentRows(): InstrumentRow[] {
       if (!bySymbol.has(symbol)) {
         bySymbol.set(symbol, instrument(symbol, input.title, "macro_proxy", null));
       }
+    }
+  }
+
+  for (const input of LAYER_ONE_INPUTS) {
+    if (!bySymbol.has(input.symbol)) {
+      bySymbol.set(input.symbol, instrument(input.symbol, input.title, "macro_proxy", null));
     }
   }
 

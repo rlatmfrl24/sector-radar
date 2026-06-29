@@ -1,4 +1,4 @@
-import { readDataConnection } from "../../_shared/dataConnection";
+import { readDataConnection, readDataConnections } from "../../_shared/dataConnection";
 
 interface Env {
   DB: D1Database;
@@ -11,6 +11,7 @@ interface D1Database {
 interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
   first<T = unknown>(): Promise<T | null>;
+  all<T = unknown>(): Promise<{ results?: T[] }>;
 }
 
 type PagesFunction<Bindings> = (context: {
@@ -19,7 +20,12 @@ type PagesFunction<Bindings> = (context: {
 }) => Response | Promise<Response>;
 
 export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
-  return json(await readDataConnection(env));
+  const dataConnection = await readDataConnection(env);
+  const dataConnections = await readDataConnections(env);
+  return json({
+    ...dataConnection,
+    data_connections: dataConnections,
+  });
 };
 
 function json(body: unknown): Response {
