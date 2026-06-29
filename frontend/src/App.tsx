@@ -23,6 +23,7 @@ import {
   snapshotSyncInterval,
   type DashboardSnapshot,
 } from "./lib/dashboardSnapshot";
+import { readExplainModePreference, writeExplainModePreference } from "./lib/explainMode";
 import type { HistoryResponse, HistoryTimeframe, SectorsResponse, ValidationResponse } from "./types";
 
 function App() {
@@ -30,6 +31,7 @@ function App() {
   const [history, setHistory] = useState<HistoryResponse | null>(null);
   const [validation, setValidation] = useState<ValidationResponse | null>(null);
   const [activeView, setActiveView] = useState<RadarView>("flow");
+  const [explainMode, setExplainMode] = useState(() => readExplainModePreference());
   const [historyTimeframe, setHistoryTimeframe] = useState<HistoryTimeframe>("90D");
   const [selectedCode, setSelectedCode] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -121,6 +123,11 @@ function App() {
     setHistory(await loadHistory(timeframe));
   }
 
+  function handleExplainModeChange(nextExplainMode: boolean) {
+    setExplainMode(nextExplainMode);
+    writeExplainModePreference(nextExplainMode);
+  }
+
   if (!data || !selected) {
     return <LoadingScreen />;
   }
@@ -130,7 +137,9 @@ function App() {
       <DashboardTopBar
         activeView={activeView}
         data={data}
+        explainMode={explainMode}
         isRefreshing={isRefreshing}
+        onExplainModeChange={handleExplainModeChange}
         onRefresh={handleRefresh}
         onViewChange={setActiveView}
       />
@@ -139,6 +148,7 @@ function App() {
         <ContextRail data={data} />
         {activeView === "flow" ? (
           <FlowLiquidityView
+            explainMode={explainMode}
             grouped={grouped}
             healthyBreadthCount={healthyBreadthCount}
             layerOneFlow={data.layer1_flow}

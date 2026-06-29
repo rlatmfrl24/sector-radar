@@ -1,4 +1,4 @@
-import { Info, RefreshCw } from "lucide-react";
+import { BookOpen, Info, RefreshCw } from "lucide-react";
 
 import type { SectorsResponse } from "../../../types";
 import type { RadarView } from "../model";
@@ -15,13 +15,17 @@ interface HeaderStatusItem {
 export function DashboardTopBar({
   activeView,
   data,
+  explainMode,
   isRefreshing,
+  onExplainModeChange,
   onRefresh,
   onViewChange,
 }: {
   activeView: RadarView;
   data: SectorsResponse;
+  explainMode: boolean;
   isRefreshing: boolean;
+  onExplainModeChange: (enabled: boolean) => void;
   onRefresh: () => void;
   onViewChange: (view: RadarView) => void;
 }) {
@@ -53,6 +57,9 @@ export function DashboardTopBar({
             value={item.value}
           />
         ))}
+        {activeView === "flow" ? (
+          <ExplainModeToggle enabled={explainMode} onChange={onExplainModeChange} />
+        ) : null}
         <button
           aria-label={refreshTooltip}
           className="refresh-button has-tooltip"
@@ -66,6 +73,31 @@ export function DashboardTopBar({
         </button>
       </div>
     </header>
+  );
+}
+
+function ExplainModeToggle({
+  enabled,
+  onChange,
+}: {
+  enabled: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  const tooltip = enabled
+    ? "전문 대시보드 화면으로 돌아갑니다."
+    : "Layer 1+2를 초보자용 쉬운 해설 화면으로 전환합니다.";
+  return (
+    <button
+      aria-label={`${enabled ? "쉬운 화면 켜짐" : "쉬운 화면 꺼짐"}. ${tooltip}`}
+      aria-pressed={enabled}
+      className={`explain-toggle ${enabled ? "active" : ""} has-tooltip`}
+      data-tooltip={tooltip}
+      onClick={() => onChange(!enabled)}
+      type="button"
+    >
+      <BookOpen aria-hidden="true" size={14} />
+      <span>{enabled ? "전문 화면" : "쉬운 화면"}</span>
+    </button>
   );
 }
 
