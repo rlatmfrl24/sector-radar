@@ -45,7 +45,15 @@ export async function refreshFredMarketContext(
   const existing = await store.readStatus(provider.name);
 
   if (!options.ignoreSchedule && !isFredWindow(now)) {
-    await writeSkippedRunLog(store, provider.name, attemptedAt, "skipped_market_schedule", "Skipped FRED outside the post-close polling window.");
+    const skipped = scheduledSkipStatus(
+      provider.name,
+      existing,
+      attemptedAt,
+      nextFredCollectionAt(now),
+      "Skipped FRED outside the post-close polling window.",
+    );
+    await store.upsertStatus(skipped);
+    await writeSkippedRunLog(store, provider.name, attemptedAt, "skipped_market_schedule", skipped.message ?? "");
     return "skipped_market_schedule";
   }
 
@@ -64,7 +72,7 @@ export async function refreshFredMarketContext(
     statusRow(provider.name, existing, {
       status: "refreshing",
       last_attempt_at: attemptedAt,
-      next_allowed_at: toIso(addMinutes(now, interval)),
+      next_allowed_at: toIso(nextFredCollectionAt(addMinutes(now, interval))),
       message: "FRED market context refresh is running.",
     }),
   );
@@ -106,7 +114,15 @@ export async function refreshKrxMarketContext(
   const existing = await store.readStatus(provider.name);
 
   if (!options.ignoreSchedule && !isKrxWindow(now)) {
-    await writeSkippedRunLog(store, provider.name, attemptedAt, "skipped_market_schedule", "Skipped KRX outside the KST morning retry window.");
+    const skipped = scheduledSkipStatus(
+      provider.name,
+      existing,
+      attemptedAt,
+      nextKrxCollectionAt(now),
+      "Skipped KRX outside the KST morning retry window.",
+    );
+    await store.upsertStatus(skipped);
+    await writeSkippedRunLog(store, provider.name, attemptedAt, "skipped_market_schedule", skipped.message ?? "");
     return "skipped_market_schedule";
   }
 
@@ -125,7 +141,7 @@ export async function refreshKrxMarketContext(
     statusRow(provider.name, existing, {
       status: "refreshing",
       last_attempt_at: attemptedAt,
-      next_allowed_at: toIso(addMinutes(now, interval)),
+      next_allowed_at: toIso(nextKrxCollectionAt(addMinutes(now, interval))),
       message: "KRX market context refresh is running.",
     }),
   );
@@ -203,7 +219,7 @@ async function finalizeProviderRefresh({
       status: successful ? "success" : "failed",
       last_attempt_at: attemptedAt,
       last_success_at: successful ? attemptedAt : existing?.last_success_at ?? null,
-      next_allowed_at: toIso(addMinutes(now, interval)),
+      next_allowed_at: toIso(nextProviderCollectionAt(provider, addMinutes(now, interval))),
       latest_price_date: successful ? latestPriceDate : existing?.latest_price_date ?? null,
       symbol_count: uniqueSeriesCount(result.rows, result.failures),
       rows_upserted: rowsUpserted,
@@ -218,7 +234,7 @@ async function finalizeProviderRefresh({
       status: "failed",
       last_attempt_at: attemptedAt,
       last_success_at: existing?.last_success_at ?? null,
-      next_allowed_at: toIso(addMinutes(now, interval)),
+      next_allowed_at: toIso(nextProviderCollectionAt(provider, addMinutes(now, interval))),
       latest_price_date: existing?.latest_price_date ?? null,
       symbol_count: uniqueSeriesCount(result.rows, result.failures),
       rows_upserted: 0,
@@ -299,6 +315,58 @@ function isFredWindow(now: Date) {
 function isKrxWindow(now: Date) {
   const clock = zonedClock(now, "Asia/Seoul");
   return clock.weekday >= 1 && clock.weekday <= 5 && clock.minute >= 8 * 60 + 20 && clock.minute <= 9 * 60 + 25;
+}
+
+function nextProviderCollectionAt(provider: string, from: Date) {
+  return provider === "krx_openapi" ? nextKrxCollectionAt(from) : nextFredCollectionAt(from);
+}
+
+function nextFredCollectionAt(from: Date) {
+  return nextScheduledQuarterHour(from, isFredWindow);
+}
+
+function nextKrxCollectionAt(from: Date) {
+  return nextScheduledQuarterHour(from, isKrxWindow);
+}
+
+function nextScheduledQuarterHour(from: Date, accepts: (candidate: Date) => boolean): Date {
+  let candidate = roundUpToQuarterHour(from);
+  for (let attempts = 0; attempts < 10 * 24 * 4; attempts += 1) {
+    if (accepts(candidate)) return candidate;
+    candidate = addMinutes(candidate, 15);
+  }
+  return roundUpToQuarterHour(addDays(from, 1));
+}
+
+function roundUpToQuarterHour(date: Date) {
+  const rounded = new Date(date);
+  rounded.setUTCSeconds(0, 0);
+  const remainder = rounded.getUTCMinutes() % 15;
+  if (remainder !== 0) {
+    rounded.setUTCMinutes(rounded.getUTCMinutes() + (15 - remainder));
+  }
+  return rounded;
+}
+
+function scheduledSkipStatus(
+  provider: string,
+  existing: DataRefreshStatusRow | null | undefined,
+  attemptedAt: string,
+  nextAllowedAt: Date,
+  message: string,
+): DataRefreshStatusRow {
+  const status = existing?.last_success_at
+    ? "success"
+    : existing?.status === "failed"
+      ? "failed"
+      : "skipped_rate_limited";
+  return statusRow(provider, existing, {
+    status,
+    last_attempt_at: attemptedAt,
+    next_allowed_at: toIso(nextAllowedAt),
+    rows_upserted: 0,
+    message: `${message} Next scheduled provider collection window is ${toIso(nextAllowedAt)}.`,
+  });
 }
 
 function previousKstBusinessDate(now: Date) {

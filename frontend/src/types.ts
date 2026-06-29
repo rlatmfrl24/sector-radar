@@ -224,6 +224,12 @@ export interface RefreshResponse {
 export interface HistoryResponse {
   market: string;
   timeframe?: HistoryTimeframe;
+  coverage?: {
+    requested_days: number;
+    available_sector_days: number;
+    effective_days: number;
+    limited_by_data: boolean;
+  };
   sectors: Array<{
     sector_code: string;
     trail: Array<{

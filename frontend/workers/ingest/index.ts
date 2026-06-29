@@ -30,7 +30,7 @@ export default {
             status: status.status,
             latest_price_date: status.latest_price_date ?? null,
             last_success_at: status.last_success_at ?? null,
-            next_allowed_at: status.next_allowed_at ?? null,
+            next_allowed_at: normalizeNextAllowedAt(status.provider, status.next_allowed_at),
             message: status.message ?? null,
           },
         ]),
@@ -106,4 +106,81 @@ function parseBoolean(value: string | undefined): boolean {
 function readOptionalEnv(env: Env, key: string): string | undefined {
   const value = (env as unknown as Record<string, string | undefined>)[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeNextAllowedAt(provider: string, storedValue: string | null | undefined, now = new Date()): string | null {
+  const stored = parseTime(storedValue);
+  if (stored && stored > now.getTime()) return storedValue ?? null;
+  if (provider === "yahoo_finance") return toIso(nextScheduledQuarterHour(now, isYahooCollectionWindow));
+  if (provider === "fred") return toIso(nextScheduledQuarterHour(now, isFredCollectionWindow));
+  if (provider === "krx_openapi") return toIso(nextScheduledQuarterHour(now, isKrxCollectionWindow));
+  return storedValue ?? null;
+}
+
+function isYahooCollectionWindow(date: Date) {
+  const clock = zonedClock(date, "America/New_York");
+  const isWeekday = clock.weekday >= 1 && clock.weekday <= 5;
+  return isWeekday && clock.minute >= 16 * 60 + 20 && clock.minute < 20 * 60;
+}
+
+function isFredCollectionWindow(date: Date) {
+  const clock = zonedClock(date, "America/New_York");
+  return clock.weekday >= 1 && clock.weekday <= 5 && clock.minute >= 16 * 60 + 45 && clock.minute <= 18 * 60;
+}
+
+function isKrxCollectionWindow(date: Date) {
+  const clock = zonedClock(date, "Asia/Seoul");
+  return clock.weekday >= 1 && clock.weekday <= 5 && clock.minute >= 8 * 60 + 20 && clock.minute <= 9 * 60 + 25;
+}
+
+function nextScheduledQuarterHour(from: Date, accepts: (candidate: Date) => boolean): Date {
+  let candidate = roundUpToQuarterHour(from);
+  for (let attempts = 0; attempts < 10 * 24 * 4; attempts += 1) {
+    if (accepts(candidate)) return candidate;
+    candidate = addMinutes(candidate, 15);
+  }
+  return roundUpToQuarterHour(addMinutes(from, 24 * 60));
+}
+
+function roundUpToQuarterHour(date: Date) {
+  const rounded = new Date(date);
+  rounded.setUTCSeconds(0, 0);
+  const remainder = rounded.getUTCMinutes() % 15;
+  if (remainder !== 0) {
+    rounded.setUTCMinutes(rounded.getUTCMinutes() + (15 - remainder));
+  }
+  return rounded;
+}
+
+function zonedClock(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    month: "2-digit",
+    timeZone,
+    weekday: "short",
+    year: "numeric",
+  }).formatToParts(date);
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const hour = Number(byType.hour) % 24;
+  return {
+    minute: hour * 60 + Number(byType.minute),
+    weekday: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(String(byType.weekday)),
+  };
+}
+
+function parseTime(value: string | null | undefined) {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function addMinutes(date: Date, minutes: number) {
+  return new Date(date.getTime() + minutes * 60_000);
+}
+
+function toIso(date: Date) {
+  return date.toISOString().replace(/\.\d{3}Z$/, "+00:00");
 }

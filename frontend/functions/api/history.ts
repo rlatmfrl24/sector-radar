@@ -34,6 +34,10 @@ interface ContextHistoryRow {
   data_freshness_json: string | null;
 }
 
+interface HistoryCoverageRow {
+  days: number | null;
+}
+
 export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   const url = new URL(request.url);
   const market = url.searchParams.get("market") ?? "US";
@@ -41,7 +45,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   const limit = boundedLimit(url.searchParams.get("limit"), timeframe);
 
   try {
-    const [sectorRows, contextRows] = await Promise.all([
+    const [sectorRows, contextRows, coverageRows] = await Promise.all([
       env.DB.prepare(
         `
           SELECT sector_code, date, rs_ratio, rs_momentum, rrg_quadrant, strength
@@ -64,11 +68,22 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
       )
         .bind(market, limit * 8)
         .all<ContextHistoryRow>(),
+      env.DB.prepare(
+        `
+          SELECT COUNT(DISTINCT date) AS days
+          FROM sector_metrics_daily
+          WHERE market = ?
+        `,
+      )
+        .bind(market)
+        .all<HistoryCoverageRow>(),
     ]);
+    const availableDays = coverageRows.results?.[0]?.days ?? 0;
 
     return json({
       market,
       timeframe,
+      coverage: buildHistoryCoverage(timeframe, availableDays),
       sectors: groupSectorHistory(sectorRows.results ?? [], limit),
       market_context: groupContextHistory(contextRows.results ?? [], limit),
       status: "ok",
@@ -77,6 +92,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
     return json({
       market,
       timeframe,
+      coverage: buildHistoryCoverage(timeframe, 0),
       sectors: [],
       market_context: [],
       status: "degraded",
@@ -134,6 +150,23 @@ function boundedLimit(value: string | null, timeframe: "30D" | "90D" | "180D") {
 function boundedTimeframe(value: string | null): "30D" | "90D" | "180D" {
   if (value === "30D" || value === "90D" || value === "180D") return value;
   return "90D";
+}
+
+export function buildHistoryCoverage(timeframe: "30D" | "90D" | "180D", availableSectorDays: number | null | undefined) {
+  const requestedDays = requestedDaysForTimeframe(timeframe);
+  const availableDays = Math.max(0, Math.floor(Number(availableSectorDays) || 0));
+  return {
+    requested_days: requestedDays,
+    available_sector_days: availableDays,
+    effective_days: Math.min(requestedDays, availableDays),
+    limited_by_data: availableDays < requestedDays,
+  };
+}
+
+function requestedDaysForTimeframe(timeframe: "30D" | "90D" | "180D") {
+  if (timeframe === "30D") return 30;
+  if (timeframe === "180D") return 180;
+  return 90;
 }
 
 function parseJson<T>(value: string | null, fallback: T): T {

@@ -177,6 +177,10 @@ function SourceFreshnessRow({
   provider: SourceFreshnessProvider;
 }) {
   const warning = warningLabel(item.warning);
+  const sourceLabel = `${sourceClassLabel(item.source_class)} · ${sourceSeriesSummary(item)}`;
+  const latestLabel = formatDateShort(item.latest_date);
+  const frequencyLabelText = frequencyShortLabel(item.frequency);
+  const nextLabel = nextCollectionShortLabel(provider, connection);
 
   return (
     <article
@@ -186,22 +190,20 @@ function SourceFreshnessRow({
     >
       <div className="source-row-title">
         <strong>{item.label}</strong>
-        <span>
-          {sourceClassLabel(item.source_class)} · {sourceSeriesSummary(item)}
-        </span>
+        <span title={`${sourceClassLabel(item.source_class)} · ${sourceSeriesLabel(item)}`}>{sourceLabel}</span>
       </div>
       <dl className="source-row-details">
-        <div>
+        <div title={`데이터 기준일: ${item.latest_date ?? "준비 중"}`}>
           <dt>기준</dt>
-          <dd>{formatDateShort(item.latest_date)}</dd>
+          <dd>{latestLabel}</dd>
         </div>
-        <div>
+        <div title={`수집 주기: ${frequencyLabel(item.frequency)}`}>
           <dt>주기</dt>
-          <dd>{frequencyShortLabel(item.frequency)}</dd>
+          <dd>{frequencyLabelText}</dd>
         </div>
-        <div>
+        <div title={`다음 수집: ${nextCollectionLabel(provider, connection)}`}>
           <dt>다음</dt>
-          <dd>{nextCollectionShortLabel(provider, connection)}</dd>
+          <dd>{nextLabel}</dd>
         </div>
       </dl>
       <div className="source-row-actions">

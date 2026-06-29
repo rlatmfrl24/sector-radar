@@ -69,12 +69,24 @@ export async function loadHistory(timeframe: HistoryTimeframe = "90D"): Promise<
     return {
       market: "US",
       timeframe,
+      coverage: {
+        requested_days: timeframeDays(timeframe),
+        available_sector_days: 0,
+        effective_days: 0,
+        limited_by_data: true,
+      },
       sectors: [],
       market_context: [],
       status: "degraded",
       message: "History API unavailable.",
     };
   }
+}
+
+function timeframeDays(timeframe: HistoryTimeframe) {
+  if (timeframe === "30D") return 30;
+  if (timeframe === "180D") return 180;
+  return 90;
 }
 
 export async function loadValidation(): Promise<ValidationResponse> {

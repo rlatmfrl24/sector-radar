@@ -344,19 +344,24 @@ export class D1RefreshStore implements RefreshStore {
         `
           SELECT context.*
           FROM market_context_daily context
-          INNER JOIN (
-            SELECT context_code, MAX(date) AS latest_date
-            FROM market_context_daily
-            WHERE market = ?
-            GROUP BY context_code
-          ) latest
-            ON latest.context_code = context.context_code
-           AND latest.latest_date = context.date
           WHERE context.market = ?
+            AND NOT EXISTS (
+              SELECT 1
+              FROM market_context_daily newer
+              WHERE newer.market = context.market
+                AND newer.context_code = context.context_code
+                AND (
+                  newer.computed_at > context.computed_at
+                  OR (
+                    newer.computed_at = context.computed_at
+                    AND newer.date > context.date
+                  )
+                )
+            )
           ORDER BY context.context_code
         `,
       )
-      .bind(market, market)
+      .bind(market)
       .all<D1MarketContextRow>();
 
     return (result.results ?? []).map((row) => ({

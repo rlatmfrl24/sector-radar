@@ -15,6 +15,8 @@ import { VerificationPanel } from "./VerificationPanel";
 
 const RRG_MIN_POS = 12;
 const RRG_MAX_POS = 88;
+const RRG_X_SCALE = 4.8;
+const RRG_Y_SCALE = 7.4;
 
 export function LayerThreeLeadership({
   history,
@@ -45,7 +47,7 @@ export function LayerThreeLeadership({
         meta={`${sectors.length} sector snapshots`}
         title="주도 (섹터)"
       />
-      <TimeframeSelector active={historyTimeframe} onChange={onHistoryTimeframeChange} />
+      <TimeframeSelector active={historyTimeframe} history={history} onChange={onHistoryTimeframeChange} />
       <section className="leadership-workspace" aria-label="leadership dashboard">
         <SectorRail
           onSelect={onSelect}
@@ -54,7 +56,13 @@ export function LayerThreeLeadership({
           warnings={warnings}
         />
         <section className="analysis-stack" aria-label="leadership analysis">
-          <RrgPlot history={history} onSelect={onSelect} sectors={sectors} selectedCode={selectedCode} />
+          <RrgPlot
+            history={history}
+            historyTimeframe={historyTimeframe}
+            onSelect={onSelect}
+            sectors={sectors}
+            selectedCode={selectedCode}
+          />
           <SectorTreemap onSelect={onSelect} sectors={sectors} selectedCode={selectedCode} />
         </section>
         <SelectedSectorPanel sector={selected} validation={validation} />
@@ -65,15 +73,30 @@ export function LayerThreeLeadership({
 
 function TimeframeSelector({
   active,
+  history,
   onChange,
 }: {
   active: HistoryTimeframe;
+  history: HistoryResponse | null;
   onChange: (timeframe: HistoryTimeframe) => void;
 }) {
   const timeframes: HistoryTimeframe[] = ["30D", "90D", "180D"];
+  const coverage = historyCoverage(history, active);
+  const coverageLabel = coverage.available_sector_days
+    ? `사용 가능 ${coverage.available_sector_days}일`
+    : "히스토리 준비 중";
+  const coverageDetail = coverage.limited_by_data
+    ? `${coverage.requested_days}D 중 ${coverage.effective_days}D만 표시`
+    : `${coverage.effective_days}D 표시 가능`;
+  const tooltip = [
+    "현재 순위와 트리맵은 최신 기준입니다.",
+    "이 선택은 선택 섹터의 RRG 이동선 길이만 바꿉니다.",
+    coverageDetail,
+  ].join("\n");
+
   return (
     <div className="timeframe-selector" aria-label="history timeframe">
-      <span>History</span>
+      <span>RRG 경로</span>
       {timeframes.map((timeframe) => (
         <button
           aria-pressed={active === timeframe}
@@ -85,6 +108,15 @@ function TimeframeSelector({
           {timeframe}
         </button>
       ))}
+      <span
+        aria-label={tooltip}
+        className={`history-coverage-chip ${coverage.limited_by_data ? "limited" : ""} has-tooltip`}
+        data-tooltip={tooltip}
+        tabIndex={0}
+        title={tooltip}
+      >
+        {coverageLabel}
+      </span>
     </div>
   );
 }
@@ -132,47 +164,51 @@ function SectorRail({
 
 function RrgPlot({
   history,
+  historyTimeframe,
   onSelect,
   sectors,
   selectedCode,
 }: {
   history: HistoryResponse | null;
+  historyTimeframe: HistoryTimeframe;
   onSelect: (sectorCode: string) => void;
   sectors: SectorSnapshot[];
   selectedCode: string;
 }) {
+  const selectedSector = sectors.find((sector) => sector.sector_code === selectedCode);
   const selectedTrail = history?.sectors.find((item) => item.sector_code === selectedCode)?.trail ?? [];
-  const trailPoints = selectedTrail
-    .filter((point) => point.rs_ratio !== null && point.rs_momentum !== null)
-    .map(
-      (point) =>
-        `${clamp(50 + (point.rs_ratio! - 100) * 4.8, RRG_MIN_POS, RRG_MAX_POS)},${clamp(
-          50 - (point.rs_momentum! - 100) * 7.4,
-          RRG_MIN_POS,
-          RRG_MAX_POS,
-        )}`,
-    )
-    .join(" ");
-  const trailCoordinates = trailPoints
-    ? trailPoints
-        .split(" ")
-        .map((point): [number, number] => {
-          const [x, y] = point.split(",").map(Number);
-          return [x, y];
-        })
-        .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y))
-    : [];
+  const validTrail = selectedTrail.filter((point) => point.rs_ratio !== null && point.rs_momentum !== null);
+  const historicalCoordinates = validTrail.map((point) => toRrgCoordinate(point.rs_ratio!, point.rs_momentum!));
+  const currentCoordinate = selectedSector
+    ? toRrgCoordinate(
+        numberMetric(selectedSector.modules.relative_strength.evidence.rs_ratio, 100),
+        numberMetric(selectedSector.modules.relative_strength.evidence.rs_momentum, 100),
+      )
+    : null;
+  const trailCoordinates = currentCoordinate
+    ? appendDistinctCoordinate(historicalCoordinates, currentCoordinate)
+    : historicalCoordinates;
   const trailPath = buildTrailPath(trailCoordinates);
   const historicalTrailPoints = trailCoordinates.slice(0, -1);
   const trailMarkerStride = Math.max(1, Math.ceil(historicalTrailPoints.length / 5));
   const trailMarkers = historicalTrailPoints.filter(
     (_, index) => index % trailMarkerStride === 0 || index === historicalTrailPoints.length - 1,
   );
+  const coverage = historyCoverage(history, historyTimeframe);
+  const trailDateRange = dateRangeLabel(validTrail.map((point) => point.date));
+  const trailSummary = `${selectedCode} 경로 ${validTrail.length}점${trailDateRange ? ` · ${trailDateRange}` : ""}`;
+  const limitedLabel = coverage.limited_by_data
+    ? `데이터 부족: ${coverage.requested_days}D 중 ${coverage.effective_days}D만 표시`
+    : `${coverage.effective_days}D 경로 표시`;
 
   return (
     <article className="dashboard-panel rrg-card">
       <PanelHeader eyebrow="RRG" title="순환매" meta="RS Ratio × RS Momentum" inverted />
       <div className="rrg-plot">
+        <div className="rrg-trail-status" aria-label={`${trailSummary}. ${limitedLabel}`}>
+          <strong>{trailSummary}</strong>
+          <span className={coverage.limited_by_data ? "limited" : ""}>{limitedLabel}</span>
+        </div>
         {trailPath ? (
           <>
             <svg
@@ -198,7 +234,9 @@ function RrgPlot({
               ))}
             </div>
           </>
-        ) : null}
+        ) : (
+          <div className="rrg-empty-trail">히스토리 누적 후 경로 표시</div>
+        )}
         <div className="axis vertical" />
         <div className="axis horizontal" />
         <span className="corner top-left">IMPROVING</span>
@@ -208,6 +246,7 @@ function RrgPlot({
         {sectors.map((sector) => {
           const rs = numberMetric(sector.modules.relative_strength.evidence.rs_ratio, 100);
           const momentum = numberMetric(sector.modules.relative_strength.evidence.rs_momentum, 100);
+          const [x, y] = toRrgCoordinate(rs, momentum);
           return (
             <button
               aria-label={`${sector.sector_code} ${quadrantLabels[sector.quadrant]}`}
@@ -217,8 +256,8 @@ function RrgPlot({
               key={sector.sector_code}
               onClick={() => onSelect(sector.sector_code)}
               style={{
-                left: `${clamp(50 + (rs - 100) * 4.8, RRG_MIN_POS, RRG_MAX_POS)}%`,
-                top: `${clamp(50 - (momentum - 100) * 7.4, RRG_MIN_POS, RRG_MAX_POS)}%`,
+                left: `${x}%`,
+                top: `${y}%`,
               }}
               type="button"
             >
@@ -232,24 +271,69 @@ function RrgPlot({
   );
 }
 
+function toRrgCoordinate(rsRatio: number, rsMomentum: number): [number, number] {
+  return [
+    clamp(50 + (rsRatio - 100) * RRG_X_SCALE, RRG_MIN_POS, RRG_MAX_POS),
+    clamp(50 - (rsMomentum - 100) * RRG_Y_SCALE, RRG_MIN_POS, RRG_MAX_POS),
+  ];
+}
+
+function appendDistinctCoordinate(points: [number, number][], coordinate: [number, number]) {
+  const last = points.at(-1);
+  if (last && Math.abs(last[0] - coordinate[0]) < 0.01 && Math.abs(last[1] - coordinate[1]) < 0.01) {
+    return points;
+  }
+  return [...points, coordinate];
+}
+
 function buildTrailPath(points: [number, number][]) {
   if (points.length < 2) {
     return "";
   }
 
-  if (points.length === 2) {
-    return `M ${points[0][0]} ${points[0][1]} L ${points[1][0]} ${points[1][1]}`;
-  }
+  return points.map(([x, y], index) => `${index === 0 ? "M" : "L"} ${roundPathPoint(x)} ${roundPathPoint(y)}`).join(" ");
+}
 
-  const commands = [`M ${points[0][0]} ${points[0][1]}`];
-  for (let index = 1; index < points.length - 1; index += 1) {
-    const [x, y] = points[index];
-    const [nextX, nextY] = points[index + 1];
-    commands.push(`Q ${x} ${y} ${(x + nextX) / 2} ${(y + nextY) / 2}`);
+function roundPathPoint(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function historyCoverage(history: HistoryResponse | null, timeframe: HistoryTimeframe): NonNullable<HistoryResponse["coverage"]> {
+  if (history?.coverage) {
+    return history.coverage;
   }
-  const [lastX, lastY] = points[points.length - 1];
-  commands.push(`L ${lastX} ${lastY}`);
-  return commands.join(" ");
+  const requestedDays = timeframeDays(timeframe);
+  const availableDays = countDistinctTrailDates(history);
+  return {
+    requested_days: requestedDays,
+    available_sector_days: availableDays,
+    effective_days: Math.min(requestedDays, availableDays),
+    limited_by_data: availableDays < requestedDays,
+  };
+}
+
+function countDistinctTrailDates(history: HistoryResponse | null) {
+  const dates = new Set<string>();
+  for (const sector of history?.sectors ?? []) {
+    for (const point of sector.trail) {
+      if (point.date) dates.add(point.date);
+    }
+  }
+  return dates.size;
+}
+
+function timeframeDays(timeframe: HistoryTimeframe) {
+  if (timeframe === "30D") return 30;
+  if (timeframe === "180D") return 180;
+  return 90;
+}
+
+function dateRangeLabel(dates: string[]) {
+  const uniqueDates = [...new Set(dates.filter(Boolean))].sort();
+  if (!uniqueDates.length) return "";
+  const first = uniqueDates[0];
+  const last = uniqueDates.at(-1) ?? first;
+  return first === last ? first : `${first}~${last}`;
 }
 
 function RrgCompactSummary({

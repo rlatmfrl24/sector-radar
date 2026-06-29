@@ -103,7 +103,13 @@ class MemoryRefreshStore implements RefreshStore {
     const latestByCode = new Map<string, MarketContextRow>();
     for (const row of this.marketContext.values()) {
       const current = latestByCode.get(row.context_code);
-      if (!current || row.date > current.date) latestByCode.set(row.context_code, row);
+      if (
+        !current ||
+        row.computed_at > current.computed_at ||
+        (row.computed_at === current.computed_at && row.date > current.date)
+      ) {
+        latestByCode.set(row.context_code, row);
+      }
     }
     return [...latestByCode.values()].sort((a, b) => a.context_code.localeCompare(b.context_code));
   }
@@ -120,6 +126,21 @@ describe("Cloudflare ingest refresh", () => {
     expect(planned.slice(0, coreSymbols().length)).toEqual(coreSymbols());
     expect(planned).toEqual(expect.arrayContaining(layerOneYahooSymbols()));
     expect(planned.length).toBeLessThanOrEqual(32);
+  });
+
+  it("selects one latest market context row when computed_at ties across dates", async () => {
+    const store = new MemoryRefreshStore();
+    await store.upsertMarketContext([
+      marketContextRow("S01", "2026-06-24", "2026-06-29T20:30:00+00:00"),
+      marketContextRow("S01", "2026-06-25", "2026-06-29T20:30:00+00:00"),
+      marketContextRow("S02", "2026-06-24", "2026-06-29T20:15:00+00:00"),
+      marketContextRow("S02", "2026-06-23", "2026-06-29T20:30:00+00:00"),
+    ]);
+
+    await expect(store.readLatestMarketContext()).resolves.toMatchObject([
+      { context_code: "S01", date: "2026-06-25", computed_at: "2026-06-29T20:30:00+00:00" },
+      { context_code: "S02", date: "2026-06-23", computed_at: "2026-06-29T20:30:00+00:00" },
+    ]);
   });
 
   it("upserts Yahoo bars and sector snapshots without exposing probability", async () => {
@@ -165,6 +186,17 @@ describe("Cloudflare ingest refresh", () => {
 
   it("skips Yahoo calls outside optimized market refresh windows", async () => {
     const store = new MemoryRefreshStore();
+    store.status = {
+      provider: "yahoo_finance",
+      status: "success",
+      last_attempt_at: "2026-06-23T20:30:00+00:00",
+      last_success_at: "2026-06-23T20:30:00+00:00",
+      next_allowed_at: "2026-06-23T20:45:00+00:00",
+      latest_price_date: "2026-06-23",
+      symbol_count: 32,
+      rows_upserted: 100,
+      message: "Prior success.",
+    };
     const provider = new FakeProvider(makeBars(allSymbols(), 260));
 
     const result = await refreshMarketData(store, provider, {
@@ -174,7 +206,14 @@ describe("Cloudflare ingest refresh", () => {
 
     expect(result.status).toBe("skipped_market_schedule");
     expect(provider.calls).toBe(0);
-    expect(store.status).toBeNull();
+    expect(store.status).toMatchObject({
+      status: "success",
+      last_attempt_at: "2026-06-24T03:00:00+00:00",
+      last_success_at: "2026-06-23T20:30:00+00:00",
+      latest_price_date: "2026-06-23",
+      next_allowed_at: "2026-06-24T20:30:00+00:00",
+      rows_upserted: 0,
+    });
     expect([...store.runLogs.values()].at(-1)?.status).toBe("skipped_market_schedule");
   });
 
@@ -286,6 +325,17 @@ describe("Cloudflare ingest refresh", () => {
 
   it("skips the holdings window when core and holdings already have the latest daily close", async () => {
     const store = new MemoryRefreshStore();
+    store.status = {
+      provider: "yahoo_finance",
+      status: "success",
+      last_attempt_at: "2026-06-23T20:30:00+00:00",
+      last_success_at: "2026-06-23T20:30:00+00:00",
+      next_allowed_at: "2026-06-23T20:45:00+00:00",
+      latest_price_date: "2026-06-23",
+      symbol_count: 32,
+      rows_upserted: 100,
+      message: "Prior success.",
+    };
     await store.upsertSeries(
       priceBarsToSeriesRows(makeBars(allSymbols(), 260), "fixture", "2026-06-23T20:30:00+00:00"),
     );
@@ -298,7 +348,13 @@ describe("Cloudflare ingest refresh", () => {
 
     expect(result.status).toBe("skipped_up_to_date");
     expect(provider.calls).toBe(0);
-    expect(store.status).toBeNull();
+    expect(store.status).toMatchObject({
+      status: "success",
+      last_attempt_at: "2026-06-23T21:00:00+00:00",
+      next_allowed_at: "2026-06-24T20:30:00+00:00",
+      latest_price_date: "2026-06-23",
+      rows_upserted: 0,
+    });
   });
 
   it("succeeds when core symbols are present and non-core symbols fail", async () => {
@@ -457,6 +513,78 @@ describe("Cloudflare ingest refresh", () => {
     expect(requestedDate).toBe("2026-06-24");
   });
 
+  it("records the next FRED collection window when a cron run is off schedule", async () => {
+    const store = new MemoryRefreshStore();
+    store.providerStatuses.set("fred", {
+      provider: "fred",
+      status: "success",
+      last_attempt_at: "2026-06-26T21:45:00+00:00",
+      last_success_at: "2026-06-26T21:45:00+00:00",
+      next_allowed_at: "2026-06-27T09:45:00+00:00",
+      latest_price_date: "2026-06-25",
+      symbol_count: 10,
+      rows_upserted: 100,
+      message: "Prior success.",
+    });
+    const provider = {
+      name: "fred",
+      async fetchDefaultSeries() {
+        throw new Error("should not fetch outside schedule");
+      },
+    };
+
+    const outcome = await refreshFredMarketContext(store, provider, {
+      now: new Date("2026-06-29T00:00:00Z"),
+    });
+    const status = store.providerStatuses.get("fred");
+
+    expect(outcome).toBe("skipped_market_schedule");
+    expect(status).toMatchObject({
+      status: "success",
+      last_attempt_at: "2026-06-29T00:00:00+00:00",
+      last_success_at: "2026-06-26T21:45:00+00:00",
+      latest_price_date: "2026-06-25",
+      next_allowed_at: "2026-06-29T20:45:00+00:00",
+      rows_upserted: 0,
+    });
+  });
+
+  it("records the next KRX collection window when a cron run is off schedule", async () => {
+    const store = new MemoryRefreshStore();
+    store.providerStatuses.set("krx_openapi", {
+      provider: "krx_openapi",
+      status: "success",
+      last_attempt_at: "2026-06-29T00:15:00+00:00",
+      last_success_at: "2026-06-28T23:30:00+00:00",
+      next_allowed_at: "2026-06-29T23:30:00+00:00",
+      latest_price_date: "2026-06-26",
+      symbol_count: 9,
+      rows_upserted: 9,
+      message: "Prior success.",
+    });
+    const provider = {
+      name: "krx_openapi",
+      async fetchMarketContext() {
+        throw new Error("should not fetch outside schedule");
+      },
+    };
+
+    const outcome = await refreshKrxMarketContext(store, provider, {
+      now: new Date("2026-06-29T01:00:00Z"),
+    });
+    const status = store.providerStatuses.get("krx_openapi");
+
+    expect(outcome).toBe("skipped_market_schedule");
+    expect(status).toMatchObject({
+      status: "success",
+      last_attempt_at: "2026-06-29T01:00:00+00:00",
+      last_success_at: "2026-06-28T23:30:00+00:00",
+      latest_price_date: "2026-06-26",
+      next_allowed_at: "2026-06-29T23:30:00+00:00",
+      rows_upserted: 0,
+    });
+  });
+
   it("preserves prior official freshness when a provider refresh fails", async () => {
     const store = new MemoryRefreshStore();
     store.providerStatuses.set("fred", {
@@ -603,6 +731,25 @@ describe("Cloudflare ingest refresh", () => {
     expect(freshness.market_context_latest_date).toBe("2026-06-24");
   });
 });
+
+function marketContextRow(contextCode: string, date: string, computedAt: string): MarketContextRow {
+  return {
+    market: "US",
+    context_code: contextCode,
+    date,
+    state: "neutral",
+    transition: "stable",
+    availability: "live",
+    source_class: "official",
+    title: contextCode,
+    source: "fixture",
+    meaning: "fixture",
+    evidence_json: "{}",
+    warnings_json: "[]",
+    data_freshness_json: "{}",
+    computed_at: computedAt,
+  };
+}
 
 function makeBars(symbols: string[], count: number): PriceBar[] {
   const start = Date.UTC(2025, 9, 7);

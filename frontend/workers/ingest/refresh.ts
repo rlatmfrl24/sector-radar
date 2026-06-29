@@ -80,10 +80,16 @@ export async function refreshMarketData(
   });
 
   if ("status" in plan) {
-    const recovered = recoverSkippedStatus(provider.name, existing, plan.message, attemptedAt, now);
-    if (recovered) {
-      await store.upsertStatus(recovered);
-    }
+    const skippedStatus = buildSkippedStatus({
+      attemptedAt,
+      enableIntradayCoreRefresh: Boolean(options.enableIntradayCoreRefresh),
+      existing,
+      plan,
+      provider: provider.name,
+      refreshIntervalMinutes,
+      now,
+    });
+    await store.upsertStatus(skippedStatus);
     await store.upsertRunLog({
       run_id: buildRunId(provider.name, attemptedAt),
       run_type: RUN_TYPE,
@@ -92,7 +98,7 @@ export async function refreshMarketData(
       status: plan.status,
       message: plan.message,
     });
-    return skippedOutcome(plan.status, provider.name, recovered ?? existing, recovered?.message ?? plan.message, refreshIntervalMinutes);
+    return skippedOutcome(plan.status, provider.name, skippedStatus, skippedStatus.message ?? plan.message, refreshIntervalMinutes);
   }
 
   if (shouldSkipRateLimited(existing?.next_allowed_at, now)) {
@@ -140,7 +146,9 @@ export async function refreshMarketData(
     ...baseStatus(provider.name, existing),
     status: "refreshing",
     last_attempt_at: attemptedAt,
-    next_allowed_at: toIso(addMinutes(now, refreshIntervalMinutes)),
+    next_allowed_at: toIso(
+      nextYahooCollectionAt(addMinutes(now, refreshIntervalMinutes), Boolean(options.enableIntradayCoreRefresh)),
+    ),
     symbol_count: fetchSymbols.length,
     rows_upserted: 0,
     message: startMessage,
@@ -193,7 +201,7 @@ export async function refreshMarketData(
       status: "success",
       last_attempt_at: attemptedAt,
       last_success_at: attemptedAt,
-      next_allowed_at: toIso(addMinutes(now, refreshIntervalMinutes)),
+      next_allowed_at: toIso(nextYahooCollectionAt(addMinutes(now, refreshIntervalMinutes), Boolean(options.enableIntradayCoreRefresh))),
       latest_price_date: latestPriceDate,
       symbol_count: fetchSymbols.length,
       rows_upserted: rowsUpserted,
@@ -204,7 +212,7 @@ export async function refreshMarketData(
       ...baseStatus(provider.name, existing),
       status: "failed",
       last_attempt_at: attemptedAt,
-      next_allowed_at: toIso(addMinutes(now, refreshIntervalMinutes)),
+      next_allowed_at: toIso(nextYahooCollectionAt(addMinutes(now, refreshIntervalMinutes), Boolean(options.enableIntradayCoreRefresh))),
       symbol_count: fetchSymbols.length,
       rows_upserted: 0,
       message: `${staleRecoveryFinalMessage}${error instanceof Error ? error.message : "Cloudflare cron refresh failed."}`,
@@ -319,6 +327,36 @@ function classifyMarketWindow(now: Date, enableIntradayCoreRefresh: boolean): Ma
     phase,
     weekday: clock.weekday,
   };
+}
+
+function nextYahooCollectionAt(
+  from: Date,
+  enableIntradayCoreRefresh: boolean,
+  options: { skipMarketDate?: string } = {},
+): Date {
+  return nextScheduledQuarterHour(from, (candidate) => {
+    const window = classifyMarketWindow(candidate, enableIntradayCoreRefresh);
+    return window.phase !== "off_window" && window.date !== options.skipMarketDate;
+  });
+}
+
+function nextScheduledQuarterHour(from: Date, accepts: (candidate: Date) => boolean): Date {
+  let candidate = roundUpToQuarterHour(from);
+  for (let attempts = 0; attempts < 10 * 24 * 4; attempts += 1) {
+    if (accepts(candidate)) return candidate;
+    candidate = addMinutes(candidate, 15);
+  }
+  return roundUpToQuarterHour(addDays(from, 1));
+}
+
+function roundUpToQuarterHour(date: Date) {
+  const rounded = new Date(date);
+  rounded.setUTCSeconds(0, 0);
+  const remainder = rounded.getUTCMinutes() % 15;
+  if (remainder !== 0) {
+    rounded.setUTCMinutes(rounded.getUTCMinutes() + (15 - remainder));
+  }
+  return rounded;
 }
 
 function newYorkClock(date: Date) {
@@ -488,6 +526,46 @@ function baseStatus(provider: string, existing: DataRefreshStatusRow | null | un
     symbol_count: existing?.symbol_count ?? 0,
     rows_upserted: existing?.rows_upserted ?? 0,
     message: existing?.message ?? null,
+  };
+}
+
+function buildSkippedStatus({
+  attemptedAt,
+  enableIntradayCoreRefresh,
+  existing,
+  now,
+  plan,
+  provider,
+  refreshIntervalMinutes,
+}: {
+  attemptedAt: string;
+  enableIntradayCoreRefresh: boolean;
+  existing: DataRefreshStatusRow | null | undefined;
+  now: Date;
+  plan: RefreshSkipPlan;
+  provider: string;
+  refreshIntervalMinutes: number;
+}): DataRefreshStatusRow {
+  const recovered = recoverSkippedStatus(provider, existing, plan.message, attemptedAt, now);
+  const base = recovered ?? baseStatus(provider, existing);
+  const skipMarketDate = plan.phase === "up_to_date" ? plan.marketDate : undefined;
+  const nextAllowed = nextYahooCollectionAt(addMinutes(now, refreshIntervalMinutes), enableIntradayCoreRefresh, {
+    skipMarketDate,
+  });
+  const status: RefreshStatus =
+    recovered?.status ??
+    (base.last_success_at ? "success" : base.status === "failed" ? "failed" : "skipped_rate_limited");
+
+  return {
+    ...base,
+    status,
+    last_attempt_at: attemptedAt,
+    next_allowed_at: toIso(nextAllowed),
+    rows_upserted: 0,
+    message:
+      plan.phase === "up_to_date"
+        ? `${plan.message} Next scheduled Yahoo collection window is ${toIso(nextAllowed)}.`
+        : `${base.message && recovered ? base.message : plan.message} Next scheduled Yahoo collection window is ${toIso(nextAllowed)}.`,
   };
 }
 
