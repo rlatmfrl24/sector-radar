@@ -42,10 +42,10 @@ export function LayerThreeLeadership({
   return (
     <section className="layer-section layer-three" aria-label="layer three leadership">
       <LayerHeader
-        description="상대강도, RRG, breadth, participation, rulebook 판정을 한 곳에서 확인합니다."
+        description="최근 상대 흐름이 좋아지는 섹터를 먼저 찾고, 순환매 위치와 판정 품질을 함께 확인합니다."
         eyebrow="Layer 3"
         meta={`${sectors.length} sector snapshots`}
-        title="주도 (섹터)"
+        title="모멘텀 (섹터)"
       />
       <TimeframeSelector active={historyTimeframe} history={history} onChange={onHistoryTimeframeChange} />
       <section className="leadership-workspace" aria-label="leadership dashboard">
@@ -134,29 +134,34 @@ function SectorRail({
 }) {
   return (
     <aside className="sector-rail" aria-label="sector selector">
-      <PanelHeader eyebrow="Sector Tier" title="리더십 순위" meta={`${warnings.length} warnings`} />
+      <PanelHeader eyebrow="Momentum" title="좋은 모멘텀 섹터" meta={`${warnings.length} warnings`} />
       <div className="sector-list">
-        {sectors.map((sector, index) => (
-          <button
-            className={`sector-row ${patternClass(sector)} ${
-              sector.sector_code === selectedCode ? "selected" : ""
-            }`}
-            key={sector.sector_code}
-            onClick={() => onSelect(sector.sector_code)}
-            type="button"
-          >
-            <span className="rank">{String(index + 1).padStart(2, "0")}</span>
-            <span className="sector-row-main">
-              <strong>{sector.sector_name}</strong>
-              <em>
-                {sector.sector_code} · {sector.rulebook.lead_pattern}
-              </em>
-            </span>
-            <span className="sector-row-rs">
-              {numberMetric(sector.modules.relative_strength.evidence.rs_ratio, 100).toFixed(1)}
-            </span>
-          </button>
-        ))}
+        {sectors.map((sector, index) => {
+          const rsRatio = numberMetric(sector.modules.relative_strength.evidence.rs_ratio, 100);
+          const rsMomentum = numberMetric(sector.modules.relative_strength.evidence.rs_momentum, 100);
+          return (
+            <button
+              className={`sector-row ${patternClass(sector)} ${
+                sector.sector_code === selectedCode ? "selected" : ""
+              }`}
+              key={sector.sector_code}
+              onClick={() => onSelect(sector.sector_code)}
+              title={`${sector.sector_name}: 모멘텀 ${rsMomentum.toFixed(1)}, 상대강도 ${rsRatio.toFixed(1)}`}
+              type="button"
+            >
+              <span className="rank">{String(index + 1).padStart(2, "0")}</span>
+              <span className="sector-row-main">
+                <strong>{sector.sector_name}</strong>
+                <em>
+                  {sector.sector_code} · 상대강도 {rsRatio.toFixed(1)} · {sector.rulebook.lead_pattern}
+                </em>
+              </span>
+              <span className="sector-row-rs" aria-label={`모멘텀 ${rsMomentum.toFixed(1)}`}>
+                {rsMomentum.toFixed(1)}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </aside>
   );
@@ -203,7 +208,7 @@ function RrgPlot({
 
   return (
     <article className="dashboard-panel rrg-card">
-      <PanelHeader eyebrow="RRG" title="순환매" meta="RS Ratio × RS Momentum" inverted />
+      <PanelHeader eyebrow="RRG" title="순환매" meta="상대강도 × 모멘텀" inverted />
       <div className="rrg-plot">
         <div className="rrg-trail-status" aria-label={`${trailSummary}. ${limitedLabel}`}>
           <strong>{trailSummary}</strong>
@@ -353,8 +358,8 @@ function RrgCompactSummary({
         <span>{selected?.sector_code ?? "N/A"}</span>
         <strong>{selected ? quadrantLabels[selected.quadrant] : "Unknown"}</strong>
         <small>
-          RS {selected ? numberMetric(selected.modules.relative_strength.evidence.rs_ratio, 100).toFixed(1) : "N/A"} ·
-          MOM {selected ? numberMetric(selected.modules.relative_strength.evidence.rs_momentum, 100).toFixed(1) : "N/A"}
+          강도 {selected ? numberMetric(selected.modules.relative_strength.evidence.rs_ratio, 100).toFixed(1) : "N/A"} ·
+          모멘텀 {selected ? numberMetric(selected.modules.relative_strength.evidence.rs_momentum, 100).toFixed(1) : "N/A"}
         </small>
       </div>
       <div className="rrg-compact-grid">
@@ -425,17 +430,17 @@ function SelectedSectorPanel({
 
       <div className="metric-pair">
         <MiniMetric
-          label="RS Ratio"
+          label="상대강도"
           value={numberMetric(sector.modules.relative_strength.evidence.rs_ratio, 100).toFixed(1)}
         />
         <MiniMetric
-          label="RS Momentum"
+          label="모멘텀"
           value={numberMetric(sector.modules.relative_strength.evidence.rs_momentum, 100).toFixed(1)}
         />
       </div>
 
       <div className="module-stack">
-        <ModuleMeter label="Relative Strength" module={sector.modules.relative_strength} />
+        <ModuleMeter label="상대강도" module={sector.modules.relative_strength} />
         <ModuleMeter label="Breadth" module={sector.modules.breadth} />
         <ModuleMeter label="Participation" module={sector.modules.participation} />
       </div>

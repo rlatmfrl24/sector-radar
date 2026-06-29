@@ -89,6 +89,19 @@ export function sortSectors(sectors: SectorSnapshot[]) {
   });
 }
 
+export function sortSectorsByMomentum(sectors: SectorSnapshot[]) {
+  return [...sectors].sort((a, b) => {
+    const momentumDiff =
+      numberMetric(b.modules.relative_strength.evidence.rs_momentum, 0) -
+      numberMetric(a.modules.relative_strength.evidence.rs_momentum, 0);
+    if (momentumDiff !== 0) return momentumDiff;
+    return (
+      numberMetric(b.modules.relative_strength.evidence.rs_ratio, 0) -
+      numberMetric(a.modules.relative_strength.evidence.rs_ratio, 0)
+    );
+  });
+}
+
 export function isWarningSector(sector: SectorSnapshot) {
   return ["False Leadership", "Mega-cap Dependence", "Late Leader", "Breakdown"].includes(
     sector.rulebook.lead_pattern,

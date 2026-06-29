@@ -14,6 +14,7 @@ import {
   isWarningSector,
   isWeakBreadth,
   sortSectors,
+  sortSectorsByMomentum,
   type RadarView,
 } from "./features/radar/model";
 import { loadHistory, refreshData } from "./lib/api";
@@ -101,6 +102,9 @@ function App() {
   const sectors = data?.sectors ?? [];
   const selected = sectors.find((sector) => sector.sector_code === selectedCode) ?? sectors[0];
   const rankedSectors = useMemo(() => sortSectors(sectors), [sectors]);
+  const momentumSectors = useMemo(() => sortSectorsByMomentum(sectors), [sectors]);
+  const selectedMomentumSector =
+    momentumSectors.find((sector) => sector.sector_code === selectedCode) ?? momentumSectors[0] ?? selected;
   const grouped = useMemo(() => groupByQuadrant(sectors), [sectors]);
   const warnings = useMemo(() => sectors.filter(isWarningSector), [sectors]);
   const healthyBreadthCount = sectors.filter(hasHealthyBreadth).length;
@@ -164,9 +168,9 @@ function App() {
         ) : (
           <LayerThreeLeadership
             onSelect={setSelectedCode}
-            sectors={rankedSectors}
-            selected={selected}
-            selectedCode={selected.sector_code}
+            sectors={momentumSectors}
+            selected={selectedMomentumSector}
+            selectedCode={selectedMomentumSector.sector_code}
             history={history}
             historyTimeframe={historyTimeframe}
             onHistoryTimeframeChange={handleHistoryTimeframeChange}
