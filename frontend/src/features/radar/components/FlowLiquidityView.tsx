@@ -17,6 +17,30 @@ import {
 } from "../model";
 import { LayerHeader, MiniMetric, ModuleMeter, PanelHeader } from "./common";
 
+type GroupedQuadrants = ReturnType<typeof groupByQuadrant>;
+
+interface LayerOneFlowProps {
+  grouped: GroupedQuadrants;
+  healthyBreadthCount: number;
+  layerOneFlow?: LayerOneFlowSnapshot;
+  reconciliation?: ContextReconciliation;
+  sectors: SectorSnapshot[];
+  warnings: SectorSnapshot[];
+  weakBreadthCount: number;
+}
+
+interface LayerOneFlowViewProps extends LayerOneFlowProps {
+  explainMode: boolean;
+}
+
+interface LayerTwoLiquidityViewProps {
+  contextHistory: HistoryResponse["market_context"];
+  marketContext: ApiMarketContextCard[];
+  sectors: SectorSnapshot[];
+  selected: SectorSnapshot;
+  watchlist: TriggerWatchlistItem[];
+}
+
 export function FlowLiquidityView({
   explainMode,
   grouped,
@@ -34,7 +58,7 @@ export function FlowLiquidityView({
   contextHistory: HistoryResponse["market_context"];
   contextReconciliation?: ContextReconciliation;
   explainMode: boolean;
-  grouped: ReturnType<typeof groupByQuadrant>;
+  grouped: GroupedQuadrants;
   healthyBreadthCount: number;
   layerOneFlow?: LayerOneFlowSnapshot;
   marketContext: ApiMarketContextCard[];
@@ -80,6 +104,126 @@ export function FlowLiquidityView({
         watchlist={watchlist}
       />
     </div>
+  );
+}
+
+export function LayerOneFlowView({
+  explainMode,
+  ...props
+}: LayerOneFlowViewProps) {
+  if (explainMode) {
+    return <BeginnerLayerOneGuide {...props} />;
+  }
+
+  return <LayerOneFlow {...props} />;
+}
+
+export function LayerTwoLiquidityView(props: LayerTwoLiquidityViewProps) {
+  return <LayerTwoLiquidity {...props} />;
+}
+
+function BeginnerLayerOneGuide({
+  grouped,
+  healthyBreadthCount,
+  layerOneFlow,
+  reconciliation,
+  sectors,
+  warnings,
+  weakBreadthCount,
+}: LayerOneFlowProps) {
+  const constructiveCount = grouped.leading.length + grouped.improving.length;
+  const neutralBreadthCount = Math.max(0, sectors.length - healthyBreadthCount - weakBreadthCount);
+  const topLeader = sectors[0];
+  const headline =
+    layerOneFlow?.state === "constructive"
+      ? "시장 흐름은 우호적이지만 확산 품질을 같이 봅니다"
+      : layerOneFlow?.state === "caution"
+        ? "시장 흐름에 경계 신호가 있어 확인이 먼저입니다"
+        : topLeader
+          ? `${topLeader.sector_code}가 앞서지만 흐름 확인이 필요합니다`
+          : "아직 결론보다 데이터 확인이 먼저입니다";
+  const narrative =
+    layerOneFlow?.narrative ??
+    "Layer 1 가격 흐름과 breadth 보조 지표가 충분히 모이면 시장 tape 판단을 표시합니다.";
+  const signals = buildLayerOneBeginnerSignals({
+    constructiveCount,
+    grouped,
+    healthyBreadthCount,
+    layerOneFlow,
+    sectors,
+    warnings,
+    weakBreadthCount,
+  });
+  const readout = buildLayerOneBeginnerReadout({
+    constructiveCount,
+    healthyBreadthCount,
+    layerOneFlow,
+    reconciliation,
+    sectors,
+    topLeader,
+    warnings,
+    weakBreadthCount,
+  });
+
+  return (
+    <section className="beginner-flow-view" aria-label="easy Layer 1 explanation">
+      <LayerHeader
+        description="시장 tape, breadth, 변동성, 섹터 경고를 Layer 1 흐름만 따로 읽습니다."
+        eyebrow="Easy Guide"
+        meta="Layer 1"
+        title="쉬운 흐름 해설"
+      />
+      <div className="beginner-top-grid">
+        <article className="beginner-verdict-card dashboard-card">
+          <span>Layer 1 쉬운 결론</span>
+          <h2>{headline}</h2>
+          <p>{narrative}</p>
+          <div className="beginner-verdict-note">
+            <strong>{layerOneFlow ? stateKorean(layerOneFlow.state) : "데이터 대기"}</strong>
+            <small>확률이나 매수·매도 판단이 아니라, 가격 흐름과 내부 확산의 정렬 상태를 쉽게 읽은 리서치 판독입니다.</small>
+          </div>
+        </article>
+        <BeginnerFlowDiagram signals={signals} />
+      </div>
+      <div className="beginner-visual-grid">
+        <BeginnerSignalBoard readout={readout} signals={signals} />
+        <article className="beginner-balance-panel dashboard-card" aria-label="easy Layer 1 visual charts">
+          <PanelHeader eyebrow="Visual Check" title="Layer 1 분포" meta="quadrant · breadth · warnings" />
+          <div className="beginner-chart-stack">
+            <BeginnerStackedBar
+              items={[
+                { className: "good", label: "leading", value: grouped.leading.length },
+                { className: "good", label: "improving", value: grouped.improving.length },
+                { className: "neutral", label: "weakening", value: grouped.weakening.length },
+                { className: "risk", label: "lagging", value: grouped.lagging.length },
+              ]}
+              label="상대강도 경로"
+              total={Math.max(1, sectors.length)}
+              value={`주도 ${constructiveCount}/${sectors.length}`}
+            />
+            <BeginnerStackedBar
+              items={[
+                { className: "good", label: "healthy", value: healthyBreadthCount },
+                { className: "neutral", label: "neutral", value: neutralBreadthCount },
+                { className: "risk", label: "weak", value: weakBreadthCount },
+              ]}
+              label="내부 확산"
+              total={Math.max(1, sectors.length)}
+              value={`${healthyBreadthCount}/${sectors.length} healthy`}
+            />
+            <BeginnerStackedBar
+              items={[
+                { className: "good", label: "quiet", value: Math.max(0, sectors.length - warnings.length) },
+                { className: "risk", label: "warning", value: warnings.length },
+              ]}
+              label="섹터 경고"
+              total={Math.max(1, sectors.length)}
+              value={`${warnings.length}/${sectors.length} warnings`}
+            />
+          </div>
+        </article>
+      </div>
+    </section>
   );
 }
 
@@ -521,10 +665,138 @@ function buildBeginnerSignals({
   ];
 }
 
+function buildLayerOneBeginnerSignals({
+  constructiveCount,
+  grouped,
+  healthyBreadthCount,
+  layerOneFlow,
+  sectors,
+  warnings,
+  weakBreadthCount,
+}: {
+  constructiveCount: number;
+  grouped: GroupedQuadrants;
+  healthyBreadthCount: number;
+  layerOneFlow?: LayerOneFlowSnapshot;
+  sectors: SectorSnapshot[];
+  warnings: SectorSnapshot[];
+  weakBreadthCount: number;
+}): BeginnerSignal[] {
+  const marketScore =
+    layerOneFlow?.state === "constructive"
+      ? 78
+      : layerOneFlow?.state === "mixed"
+        ? 52
+        : layerOneFlow?.state === "caution"
+          ? 28
+          : 40;
+  const breadthScore = sectors.length ? Math.round((healthyBreadthCount / sectors.length) * 100) : 0;
+  const volatilityScore =
+    layerOneFlow?.risk.state === "calm"
+      ? 74
+      : layerOneFlow?.risk.state === "elevated"
+        ? 30
+        : 42;
+  const rotationScore = sectors.length ? Math.round((constructiveCount / sectors.length) * 100) : 0;
+
+  return [
+    {
+      definition: "SPY 가격 흐름과 1D/1M 변화를 보며 시장 전체가 순풍인지 역풍인지 확인합니다.",
+      id: "market",
+      interpretation: marketWindInterpretation(layerOneFlow),
+      label: "시장 바람",
+      meta: layerOneFlow ? `SPY 1M ${formatPercent(layerOneFlow.tape.ret_1m)} · 52w ${formatRangePosition(layerOneFlow.tape.range_52w_position)}` : "SPY 수집 후 판단",
+      score: marketScore,
+      tone: scoreTone(marketScore),
+      value: layerOneFlow ? stateKorean(layerOneFlow.state) : "데이터 대기",
+    },
+    {
+      definition: "상승이 일부 섹터에만 몰렸는지, 여러 섹터로 넓게 퍼지는지 확인합니다.",
+      id: "breadth",
+      interpretation: breadthInterpretation({ healthyBreadthCount, sectors, warnings, weakBreadthCount }),
+      label: "내부 확산",
+      meta: `약한 breadth ${weakBreadthCount}개 · 경고 ${warnings.length}개`,
+      score: breadthScore,
+      tone: scoreTone(breadthScore),
+      value: `${healthyBreadthCount}/${sectors.length} healthy`,
+    },
+    {
+      definition: "VIX와 실현변동성으로 시장 불안이 Layer 1 흐름을 방해하는지 확인합니다.",
+      id: "volatility",
+      interpretation:
+        layerOneFlow?.risk.state === "elevated"
+          ? "변동성이 높아져 좋은 가격 흐름도 되돌림 위험과 함께 봅니다."
+          : layerOneFlow?.risk.state === "calm"
+            ? "변동성 압력은 제한적이라 흐름을 크게 방해하지 않는 상태입니다."
+            : "변동성 데이터가 부족해 위험 압력 해석을 보류합니다.",
+      label: "변동성 압력",
+      meta: `VIX ${formatVix(layerOneFlow)} · ${transitionLabel(layerOneFlow?.risk.transition ?? "unknown")}`,
+      score: volatilityScore,
+      tone: scoreTone(volatilityScore),
+      value: judgementLabel(layerOneFlow?.risk.state ?? "unknown"),
+    },
+    {
+      definition: "Leading과 Improving 섹터가 많을수록 시장 내부 회전이 더 건설적으로 보입니다.",
+      id: "rotation",
+      interpretation:
+        constructiveCount > warnings.length
+          ? "주도·순환 섹터가 경고 섹터보다 많아 흐름의 폭은 우호적인 편입니다."
+          : "경고 섹터가 많아 리더십 품질과 확산 여부를 다시 확인합니다.",
+      label: "섹터 회전",
+      meta: `Leading ${grouped.leading.length} · Improving ${grouped.improving.length}`,
+      score: rotationScore,
+      tone: scoreTone(rotationScore),
+      value: `주도 ${constructiveCount}/${sectors.length}`,
+    },
+  ];
+}
+
 function scoreTone(score: number): BeginnerSignal["tone"] {
   if (score >= 64) return "good";
   if (score <= 42) return "risk";
   return "neutral";
+}
+
+function buildLayerOneBeginnerReadout({
+  constructiveCount,
+  healthyBreadthCount,
+  layerOneFlow,
+  reconciliation,
+  sectors,
+  topLeader,
+  warnings,
+  weakBreadthCount,
+}: {
+  constructiveCount: number;
+  healthyBreadthCount: number;
+  layerOneFlow?: LayerOneFlowSnapshot;
+  reconciliation?: ContextReconciliation;
+  sectors: SectorSnapshot[];
+  topLeader?: SectorSnapshot;
+  warnings: SectorSnapshot[];
+  weakBreadthCount: number;
+}) {
+  const positives: string[] = [];
+  const cautions: string[] = [];
+  const nextChecks: string[] = [];
+
+  if (topLeader) positives.push(`${topLeader.sector_code}가 현재 가장 앞선 섹터로 잡힙니다.`);
+  if (layerOneFlow?.state === "constructive") positives.push("시장 tape는 대체로 우호적인 쪽으로 읽힙니다.");
+  if (constructiveCount > sectors.length / 2) positives.push(`Leading/Improving 섹터가 ${constructiveCount}개로 절반 이상입니다.`);
+  if (healthyBreadthCount > weakBreadthCount) positives.push(`healthy breadth ${healthyBreadthCount}개가 weak ${weakBreadthCount}개보다 많습니다.`);
+  if (positives.length === 0) positives.push("아직 강하게 우호적인 Layer 1 항목은 제한적입니다.");
+
+  if (layerOneFlow?.risk.state === "elevated") cautions.push("VIX 또는 변동성 압력이 높아져 흐름 판정을 보수적으로 봅니다.");
+  if (weakBreadthCount >= healthyBreadthCount) cautions.push(`weak breadth ${weakBreadthCount}개가 healthy ${healthyBreadthCount}개보다 많거나 비슷합니다.`);
+  if (warnings.length) cautions.push(`경고 섹터가 ${warnings.length}개 있어 리더십 품질 확인이 필요합니다.`);
+  if (reconciliation?.state === "divergent") cautions.push("Layer 1 흐름과 외부 컨텍스트가 완전히 같은 방향은 아닙니다.");
+  if (cautions.length === 0) cautions.push("현재 핵심 경고는 제한적이지만, breadth와 변동성은 다음 갱신에서도 확인합니다.");
+
+  nextChecks.push("다음 갱신 후 SPY 1M 흐름과 52주 위치가 같은 방향을 유지하는지 확인합니다.");
+  nextChecks.push("Leading/Improving 섹터 수가 줄어들면 회전 품질 약화로 표시합니다.");
+  nextChecks.push("VIX 상승과 weak breadth 증가가 동시에 나오면 Layer 1 판단을 낮춥니다.");
+
+  return { cautions, nextChecks, positives };
 }
 
 function buildBeginnerResultReadout({
@@ -1228,7 +1500,7 @@ function FlowFinalReadout({
       : `breadth는 ${healthyBreadthCount}/${sectors.length}개 건강 신호에 머물러 확산 확인이 필요합니다.`;
   const transitionLabel = layerOneFlow ? transitionKorean(layerOneFlow.transition) : "전환 정보는 제한적";
   const reconciliationText = reconciliation
-    ? `마켓 컨텍스트는 ${reconciliationLabel(reconciliation.state)}입니다. ${reconciliation.narrative}`
+    ? `외부 정합성은 ${reconciliationLabel(reconciliation.state)}로 요약되며 상세 원천과 리스크는 Layer 2에서 확인합니다.`
     : "Layer 2 맥락은 아직 보류 상태입니다.";
   const fallbackNarrative =
     topLeader
@@ -1272,6 +1544,12 @@ function formatPercent(value: number | null | undefined) {
 function formatPercentFromWhole(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "unknown";
   return `${value.toFixed(1)}%`;
+}
+
+function formatRangePosition(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "unknown";
+  const normalized = value > 1 ? value : value * 100;
+  return `${Math.round(normalized)}% 위치`;
 }
 
 function formatVix(flow?: LayerOneFlowSnapshot) {
@@ -1716,7 +1994,9 @@ function buildLayerOneVerdictItems({
       value: `${warnings.length} warnings`,
     },
     {
-      detail: reconciliation?.narrative ?? "유동성 컨텍스트와의 정합성은 데이터 수집 후 판단합니다.",
+      detail: reconciliation
+        ? "외부 컨텍스트 상세와 관련 수집원은 Layer 2 화면에서 따로 확인합니다."
+        : "외부 정합성은 데이터 수집 후 Layer 2 화면에서 판단합니다.",
       label: "정합성",
       tone: reconciliationTone(reconciliation?.state),
       value: reconciliation ? reconciliationLabel(reconciliation.state) : "대기",

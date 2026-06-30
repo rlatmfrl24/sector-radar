@@ -9,6 +9,7 @@
     "build": "tsc -b && npm run typecheck:worker && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "source:probe": "node scripts/probe-market-sources.mjs",
+    "cf:backfill:history": "tsx scripts/backfill-sector-history.ts",
     "cf:dev": "wrangler pages dev dist --d1 DB=sector-radar-local",
     "cf:deploy": "wrangler pages deploy dist",
     "cf:ingest:dev": "wrangler dev --config wrangler.ingest.jsonc --test-scheduled",
@@ -32,6 +33,7 @@
     "@types/node": "^26.0.0",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "tsx": "^4.22.4",
     "typescript": "^5.9.3",
     "vitest": "^4.1.9",
     "wrangler": "^4.56.0"

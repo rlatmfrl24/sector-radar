@@ -690,6 +690,7 @@ function statusFromFreshness({
   if (!latestDate) return connection?.status === "never_run" ? "unavailable" : "stale";
   if (connection?.status === "failed" && !connection.last_success_at) return "unavailable";
   if (isStale(latestDate, frequency, now)) return "stale";
+  if (connection?.status === "refreshing" && connection.last_success_at) return "live";
   return connection?.mode === "live" || connection?.status === "success" ? "live" : "stale";
 }
 
@@ -699,7 +700,10 @@ function isStale(latestDate: string, frequency: FreshnessFrequency, now: Date) {
   const latest = parseDateOnly(latestDate);
   if (!latest) return true;
   const current = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const diffDays = Math.floor((current - latest) / 86_400_000);
+  const diffDays =
+    frequency === "daily" || frequency === "intraday_gate"
+      ? businessDaysSince(latest, current)
+      : Math.floor((current - latest) / 86_400_000);
   return diffDays > threshold;
 }
 
@@ -715,6 +719,16 @@ function parseDateOnly(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
   if (!match) return null;
   return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function businessDaysSince(latestUtc: number, currentUtc: number) {
+  if (currentUtc <= latestUtc) return 0;
+  let days = 0;
+  for (let time = latestUtc + 86_400_000; time <= currentUtc; time += 86_400_000) {
+    const weekday = new Date(time).getUTCDay();
+    if (weekday !== 0 && weekday !== 6) days += 1;
+  }
+  return days;
 }
 
 function providerForContext(card: MarketContextLike): SourceProvider {

@@ -22,18 +22,22 @@ interface YahooChartResponse {
 
 const YAHOO_HOSTS = ["query2.finance.yahoo.com", "query1.finance.yahoo.com"];
 const BODY_PREVIEW_LIMIT = 240;
+const DEFAULT_FETCH_TIMEOUT_MS = 8_000;
 
 export interface YahooChartProviderOptions {
   concurrency?: number;
+  fetchTimeoutMs?: number;
 }
 
 export class YahooChartProvider implements MarketDataProvider {
   readonly name = "yahoo_finance";
 
   private readonly concurrency: number;
+  private readonly fetchTimeoutMs: number;
 
   constructor(options: YahooChartProviderOptions = {}) {
     this.concurrency = normalizeConcurrency(options.concurrency);
+    this.fetchTimeoutMs = normalizeTimeout(options.fetchTimeoutMs);
   }
 
   async fetchDaily(symbols: string[], range: string): Promise<ProviderFetchResult> {
@@ -66,6 +70,8 @@ export class YahooChartProvider implements MarketDataProvider {
 
   private async fetchSymbolFromHost(symbol: string, range: string, host: string): Promise<ProviderFetchResult> {
     const url = `https://${host}/v8/finance/chart/${encodeURIComponent(symbol)}?range=${encodeURIComponent(range)}&interval=1d&includePrePost=false&events=history&lang=en-US&region=US&corsDomain=finance.yahoo.com`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.fetchTimeoutMs);
     try {
       const response = await fetch(url, {
         cache: "no-store",
@@ -78,6 +84,7 @@ export class YahooChartProvider implements MarketDataProvider {
           "user-agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
         },
+        signal: controller.signal,
       });
       if (!response.ok) {
         return failure(symbol, `Yahoo chart returned HTTP ${response.status}`, {
@@ -118,7 +125,12 @@ export class YahooChartProvider implements MarketDataProvider {
 
       return { bars, failures: [] };
     } catch (error) {
+      if (isAbortError(error)) {
+        return failure(symbol, `Yahoo chart request timed out after ${this.fetchTimeoutMs}ms.`, { host });
+      }
       return failure(symbol, error instanceof Error ? error.message : "Yahoo chart request failed.", { host });
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 }
@@ -174,4 +186,13 @@ function finiteOrNull(value: number | null | undefined) {
 function normalizeConcurrency(value: number | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) return 2;
   return Math.min(4, Math.max(1, Math.floor(value)));
+}
+
+function normalizeTimeout(value: number | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_FETCH_TIMEOUT_MS;
+  return Math.min(30_000, Math.max(1_000, Math.floor(value)));
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
 }

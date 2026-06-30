@@ -16,6 +16,7 @@ const RUN_TYPE = "cloudflare_market_context_refresh";
 const CONTEXT_LOOKBACK_DAYS = 430;
 const DEFAULT_FRED_INTERVAL_MINUTES = 12 * 60;
 const DEFAULT_KRX_INTERVAL_MINUTES = 24 * 60;
+const STALE_REFRESHING_AFTER_MINUTES = 30;
 
 interface FredLikeProvider {
   readonly name: "fred" | string;
@@ -43,6 +44,7 @@ export async function refreshFredMarketContext(
   const attemptedAt = toIso(now);
   const interval = normalizeInterval(options.fredIntervalMinutes, DEFAULT_FRED_INTERVAL_MINUTES);
   const existing = await store.readStatus(provider.name);
+  const staleRefreshing = isStaleRefreshing(existing, now);
 
   if (!options.ignoreSchedule && !isFredWindow(now)) {
     const skipped = scheduledSkipStatus(
@@ -57,7 +59,7 @@ export async function refreshFredMarketContext(
     return "skipped_market_schedule";
   }
 
-  if (shouldSkipRateLimited(existing?.next_allowed_at, now)) {
+  if (shouldSkipRateLimited(existing?.next_allowed_at, now) && !staleRefreshing) {
     const skipped = statusRow(provider.name, existing, {
       status: "skipped_rate_limited",
       last_attempt_at: attemptedAt,
@@ -112,6 +114,7 @@ export async function refreshKrxMarketContext(
   const attemptedAt = toIso(now);
   const interval = normalizeInterval(options.krxIntervalMinutes, DEFAULT_KRX_INTERVAL_MINUTES);
   const existing = await store.readStatus(provider.name);
+  const staleRefreshing = isStaleRefreshing(existing, now);
 
   if (!options.ignoreSchedule && !isKrxWindow(now)) {
     const skipped = scheduledSkipStatus(
@@ -126,7 +129,7 @@ export async function refreshKrxMarketContext(
     return "skipped_market_schedule";
   }
 
-  if (shouldSkipRateLimited(existing?.next_allowed_at, now)) {
+  if (shouldSkipRateLimited(existing?.next_allowed_at, now) && !staleRefreshing) {
     const skipped = statusRow(provider.name, existing, {
       status: "skipped_rate_limited",
       last_attempt_at: attemptedAt,
@@ -369,6 +372,12 @@ function scheduledSkipStatus(
   });
 }
 
+function isStaleRefreshing(existing: DataRefreshStatusRow | null | undefined, now: Date) {
+  if (existing?.status !== "refreshing") return false;
+  const lastAttempt = parseTime(existing.last_attempt_at);
+  return Boolean(lastAttempt && now.getTime() - lastAttempt >= STALE_REFRESHING_AFTER_MINUTES * 60_000);
+}
+
 function previousKstBusinessDate(now: Date) {
   let date = addKstCalendarDays(zonedClock(now, "Asia/Seoul").date, -1);
   while ([0, 6].includes(kstWeekday(date))) {
@@ -444,4 +453,10 @@ function toIso(date: Date) {
 
 function toDate(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+function parseTime(value: string | null | undefined) {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
 }

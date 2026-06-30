@@ -24,6 +24,8 @@ interface DataRefreshRow {
   message: string | null;
 }
 
+const STALE_REFRESHING_AFTER_MINUTES = 30;
+
 export async function readDataConnection(
   env: Env,
   options: { message?: string; refreshIntervalMinutes?: number } = {},
@@ -33,20 +35,21 @@ export async function readDataConnection(
     const row = await env.DB.prepare("SELECT * FROM data_refresh_status WHERE provider = ?")
       .bind("yahoo_finance")
       .first<DataRefreshRow>();
+    const displayRow = normalizeDisplayRow(row);
 
     return {
-      provider: row?.provider ?? "yahoo_finance",
-      mode: modeFromRow(row),
-      status: row?.status ?? "never_run",
+      provider: displayRow?.provider ?? "yahoo_finance",
+      mode: modeFromRow(displayRow),
+      status: displayRow?.status ?? "never_run",
       refresh_interval_minutes: refreshIntervalMinutes,
-      last_attempt_at: row?.last_attempt_at ?? undefined,
-      last_success_at: row?.last_success_at ?? undefined,
-      next_allowed_at: normalizeNextAllowedAt(row, "yahoo_finance") ?? undefined,
-      latest_price_date: row?.latest_price_date ?? undefined,
-      symbol_count: row?.symbol_count ?? 0,
-      rows_upserted: row?.rows_upserted ?? 0,
+      last_attempt_at: displayRow?.last_attempt_at ?? undefined,
+      last_success_at: displayRow?.last_success_at ?? undefined,
+      next_allowed_at: normalizeNextAllowedAt(displayRow, "yahoo_finance") ?? undefined,
+      latest_price_date: displayRow?.latest_price_date ?? undefined,
+      symbol_count: displayRow?.symbol_count ?? 0,
+      rows_upserted: displayRow?.rows_upserted ?? 0,
       manual_refresh_available: false,
-      message: options.message ?? row?.message ?? defaultMessage(row),
+      message: options.message ?? displayRow?.message ?? defaultMessage(displayRow),
     };
   } catch {
     return {
@@ -75,7 +78,11 @@ export async function readDataConnections(env: Env) {
     return Object.fromEntries(
       providers.map((provider) => [
         provider,
-        toDataConnection(byProvider.get(provider) ?? null, provider, provider === "yahoo_finance" ? 15 : provider === "fred" ? 720 : 1440),
+        toDataConnection(
+          normalizeDisplayRow(byProvider.get(provider) ?? null),
+          provider,
+          provider === "yahoo_finance" ? 15 : provider === "fred" ? 720 : 1440,
+        ),
       ]),
     );
   } catch {
@@ -88,6 +95,19 @@ export async function readDataConnections(env: Env) {
       ]),
     );
   }
+}
+
+export function normalizeDisplayRow(row: DataRefreshRow | null, now = new Date()): DataRefreshRow | null {
+  if (!isStaleRefreshing(row, now)) return row;
+  const status = row?.last_success_at ? "success" : "failed";
+  const suffix = row?.last_success_at
+    ? "이전 수집이 종료 표시를 남기지 못해 마지막 성공 스냅샷을 사용 중입니다."
+    : "이전 수집이 종료 표시를 남기지 못했고 성공 스냅샷이 없습니다.";
+  return {
+    ...row!,
+    status,
+    message: [row?.message, suffix].filter(Boolean).join(" "),
+  };
 }
 
 function modeFromRow(row: DataRefreshRow | null) {
@@ -104,6 +124,12 @@ function defaultMessage(row: DataRefreshRow | null) {
   if (row.status === "skipped_rate_limited") return "Refresh skipped because the 15 minute gate is active.";
   if (row.status === "failed") return row.message ?? "Cloudflare cron refresh failed.";
   return "Cloudflare cron owns Yahoo refresh; public manual refresh is disabled.";
+}
+
+function isStaleRefreshing(row: DataRefreshRow | null, now: Date) {
+  if (row?.status !== "refreshing") return false;
+  const lastAttempt = parseTime(row.last_attempt_at);
+  return Boolean(lastAttempt && now.getTime() - lastAttempt >= STALE_REFRESHING_AFTER_MINUTES * 60_000);
 }
 
 function toDataConnection(

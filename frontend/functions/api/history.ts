@@ -50,14 +50,21 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
     const [sectorRows, contextRows, coverageRows] = await Promise.all([
       env.DB.prepare(
         `
+          WITH selected_dates AS (
+            SELECT DISTINCT date
+            FROM sector_metrics_daily
+            WHERE market = ?
+            ORDER BY date DESC
+            LIMIT ?
+          )
           SELECT sector_code, date, rs_ratio, rs_momentum, rrg_quadrant, strength
           FROM sector_metrics_daily
           WHERE market = ?
+            AND date IN (SELECT date FROM selected_dates)
           ORDER BY date DESC, sector_code
-          LIMIT ?
         `,
       )
-        .bind(market, limit * 16)
+        .bind(market, limit, market)
         .all<SectorHistoryRow>(),
       env.DB.prepare(
         `
@@ -87,6 +94,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
     return json({
       market,
       timeframe,
+      limit,
       coverage: buildHistoryCoverage(timeframe, availableDays),
       sectors: groupSectorHistory(sectorRows.results ?? [], limit),
       market_context: groupContextHistory(contextRows.results ?? [], limit),
@@ -143,7 +151,12 @@ function groupContextHistory(rows: ContextHistoryRow[], limit: number) {
   }));
 }
 
-function boundedLimit(value: string | null, timeframe: "30D" | "90D" | "180D") {
+export function boundedLimit(value: string | null, timeframe: "30D" | "90D" | "180D") {
+  if (value === null || value.trim() === "") {
+    if (timeframe === "30D") return 30;
+    if (timeframe === "180D") return 180;
+    return 90;
+  }
   const parsed = Number(value);
   if (Number.isFinite(parsed)) return Math.min(180, Math.max(20, Math.floor(parsed)));
   if (timeframe === "30D") return 30;

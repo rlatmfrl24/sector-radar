@@ -22,7 +22,7 @@
 canvas white / canvas-soft 배경
 dense app shell, no landing hero
 compact status bar and summary strip
-two dense dashboard screens: Layer 1+2 and Layer 3
+three dense dashboard screens: Layer 1, Layer 2, and Layer 3
 deep navy analytical panels
 thin 300-weight typography
 tabular numerics for market values
@@ -42,13 +42,14 @@ Landing page hero, marketing CTA, product promo copy, decorative mesh-first comp
 ```text
 Overview
   ├─ Compact Top Bar: benchmark, as_of, source, validation gate, probability gate
-  ├─ Screen Switch: 흐름·여력 / 주도·섹터
-  ├─ Screen A: Layer 1 흐름 + Layer 2 여력
+  ├─ Screen Switch: 흐름 / 여력 / 주도·섹터
+  ├─ Screen A: Layer 1 흐름
   │   ├─ Layer 1: flow readout strip (leadership, breadth, warnings, reconciliation)
-  │   ├─ Layer 1: evidence panel (RRG quadrant mix, RS distribution, clusters, breadth, checkpoints)
+  │   └─ Layer 1: evidence panel (RRG quadrant mix, RS distribution, clusters, breadth, checkpoints)
+  ├─ Screen B: Layer 2 여력
   │   ├─ Layer 2: live ETF participation snapshot
-  │   └─ Layer 2: Yahoo live/proxy/hold liquidity inputs without fake source claims
-  ├─ Screen B: Layer 3 주도 (섹터)
+  │   └─ Layer 2: Yahoo/FRED live/proxy/hold liquidity inputs without fake source claims
+  ├─ Screen C: Layer 3 주도 (섹터)
   │   ├─ Left Rail: sector leadership ranking
   │   ├─ Main Canvas: RRG + treemap
   │   └─ Right Inspector: selected sector narrative, module states, risks, invalidation
@@ -145,6 +146,7 @@ Primary screen:
 
 Diagnostics:
   - 상단 수집 내역 / freshness panel
+  - freshness panel은 선택된 상단 탭의 관련 수집원만 표시한다. Layer 1은 market tape·breadth helper 시리즈, Layer 2는 participation·market context·risk trigger 원천, Layer 3는 sector snapshot/leadership 원천을 기준으로 분리한다.
   - 개발 문서의 data-source expansion plan
 ```
 
@@ -296,7 +298,7 @@ provider
 React + Vite 우선:
 
 ```text
-frontend/src/App.tsx: two-screen Overview switch, Screen A Layer 1+2, Screen B Layer 3
+frontend/src/App.tsx: three-screen Overview switch, Screen A Layer 1, Screen B Layer 2, Screen C Layer 3
 frontend/functions/api/sectors.ts: D1-backed sector snapshots
 frontend/wrangler.jsonc: Cloudflare Pages + D1 binding
 ```
@@ -321,8 +323,9 @@ no fake macro or stock metrics
 
 ```text
 desktop: app shell은 100dvh 안에 고정하고 선택된 화면이 남은 높이를 모두 사용한다.
-desktop Screen A: Layer 1과 Layer 2를 한 화면에 압축 배치하고, 가짜 macro 수치는 표시하지 않는다.
-desktop Screen B: Layer 3는 화면 전체를 사용하며 leadership rail과 selected inspector는 내부 스크롤만 허용한다.
+desktop Screen A: Layer 1은 화면 전체를 사용하며 market tape, breadth, volatility evidence가 선택 화면 내부에서만 스크롤된다.
+desktop Screen B: Layer 2는 화면 전체를 사용하며 participation, market context, risk trigger가 선택 화면 내부에서만 스크롤된다.
+desktop Screen C: Layer 3는 화면 전체를 사용하며 leadership rail과 selected inspector는 내부 스크롤만 허용한다.
 tablet/mobile: 선택된 화면 내부만 세로 스크롤되고, top bar/status는 가로 스크롤 대신 반응형 그리드로 접힌다.
 screen switch는 local UI state로 동작하며 route를 늘리지 않는다.
 ```

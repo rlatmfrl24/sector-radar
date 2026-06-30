@@ -8,8 +8,8 @@ export function VerificationPanel({ validation }: { validation: ValidationRespon
     <article className="verification-panel dashboard-card">
       <div>
         <ShieldCheck size={14} />
-        <span>Validation</span>
-        <strong>{validation?.status ?? "unvalidated"}</strong>
+        <span>검증 상태</span>
+        <strong>{validationStatusLabel(validation?.status)}</strong>
       </div>
       <p>Walk-forward 검증 전에는 확률, 승률, 기대수익률을 판단 문구에 쓰지 않습니다.</p>
       <dl>
@@ -24,4 +24,9 @@ export function VerificationPanel({ validation }: { validation: ValidationRespon
       </dl>
     </article>
   );
+}
+
+function validationStatusLabel(status?: string) {
+  if (!status || status === "unvalidated") return "검증 전";
+  return status;
 }

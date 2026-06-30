@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildHistoryCoverage } from "./history";
+import { boundedLimit, buildHistoryCoverage } from "./history";
 
 describe("history API coverage", () => {
   it("maps timeframe to requested days", () => {
@@ -37,5 +37,18 @@ describe("history API coverage", () => {
       effective_days: 0,
       limited_by_data: true,
     });
+  });
+
+  it("uses the selected timeframe as default limit when limit is omitted", () => {
+    expect(boundedLimit(null, "30D")).toBe(30);
+    expect(boundedLimit(null, "90D")).toBe(90);
+    expect(boundedLimit(null, "180D")).toBe(180);
+    expect(boundedLimit("", "180D")).toBe(180);
+  });
+
+  it("keeps explicit history limit within the supported range", () => {
+    expect(boundedLimit("7", "180D")).toBe(20);
+    expect(boundedLimit("240", "180D")).toBe(180);
+    expect(boundedLimit("45", "180D")).toBe(45);
   });
 });

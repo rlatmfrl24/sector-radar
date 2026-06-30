@@ -4,28 +4,39 @@ import { Activity, ChevronDown, Database, Info, ListFilter, ShieldCheck } from "
 import type {
   DataConnection,
   DataConnections,
+  LayerOneFlowSnapshot,
   SectorsResponse,
   SourceFreshnessItem,
   SourceFreshnessProvider,
 } from "../../../types";
+import type { RadarView } from "../model";
 
-export function FreshnessBar({ data }: { data: SectorsResponse }) {
-  const [expanded, setExpanded] = useState(false);
+export function FreshnessBar({
+  activeView = "layer1",
+  data,
+  initialExpanded = false,
+}: {
+  activeView?: RadarView;
+  data: SectorsResponse;
+  initialExpanded?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(initialExpanded);
   const connections = data.data_connections ?? { yahoo_finance: data.data_connection };
   const freshness = data.source_freshness ?? [];
-  const activeFreshness = freshness.filter(isActiveFreshness);
-  const entries = providerEntries(connections, activeFreshness);
+  const activeFreshness = scopedFreshnessItems(data, freshness, activeView).filter(isActiveFreshness);
+  const entries = providerEntries(connections, activeFreshness, activeView);
   const staleCount = activeFreshness.length
     ? activeFreshness.filter((item) => item.status !== "live").length
     : entries.filter(([, connection]) => connection.mode !== "live").length;
   const providerGroups = useMemo(() => groupFreshness(activeFreshness), [activeFreshness]);
+  const scopeLabel = freshnessScopeLabel(activeView);
 
   return (
     <section className={`freshness-bar ${expanded ? "expanded" : ""}`} aria-label="provider freshness">
       <div className="freshness-summary">
         <div className="freshness-head">
           <Database size={14} />
-          <strong>{staleCount === 0 ? "수집원 정상" : `확인 필요한 수집원 ${staleCount}개`}</strong>
+          <strong>{staleCount === 0 ? `${scopeLabel} 수집원 정상` : `${scopeLabel} 확인 ${staleCount}개`}</strong>
         </div>
         <div className="provider-strip">
           {entries.map(([key, connection]) => {
@@ -54,7 +65,7 @@ export function FreshnessBar({ data }: { data: SectorsResponse }) {
           type="button"
         >
           <ListFilter size={14} />
-          <span>수집 내역</span>
+          <span>{scopeLabel} 수집 내역</span>
           <ChevronDown aria-hidden="true" className={expanded ? "open" : ""} size={14} />
         </button>
       </div>
@@ -63,44 +74,44 @@ export function FreshnessBar({ data }: { data: SectorsResponse }) {
   );
 }
 
-export function ContextRail({ data }: { data: SectorsResponse }) {
+export function ContextRail({
+  activeView = "layer1",
+  data,
+}: {
+  activeView?: RadarView;
+  data: SectorsResponse;
+}) {
   const activeContext = (data.market_context ?? []).filter((card) => card.source_class !== "held" && card.source_class !== "manual");
   const officialCount = activeContext.filter((card) => card.source_class === "official").length;
-  const concentration = data.concentration;
-  const reconciliation = data.context_reconciliation;
+  const rail = contextRailItems(data, activeView, activeContext.length, officialCount);
 
   return (
     <section className="context-rail" aria-label="analysis flow">
-      <div>
-        <Activity size={14} />
-        <span>Market Context</span>
-        <strong>공식 {officialCount}/{activeContext.length}</strong>
-      </div>
-      <i />
-      <div>
-        <Database size={14} />
-        <span>Sector Leadership</span>
-        <strong>{concentration?.top1 ?? data.sectors[0]?.sector_code ?? "N/A"} lead</strong>
-      </div>
-      <i />
-      <div>
-        <Activity size={14} />
-        <span>Reconciliation</span>
-        <strong>{reconciliation ? reconciliationLabel(reconciliation.state) : "pending"}</strong>
-      </div>
-      <i />
-      <div>
-        <ShieldCheck size={14} />
-        <span>Validation</span>
-        <strong>{data.validation.expose_probability ? "prob on" : "prob off"}</strong>
-      </div>
-      <small>
-        {reconciliation?.narrative ??
-          (concentration?.effective_sector_count
-            ? `effective sectors ${concentration.effective_sector_count.toFixed(1)} · RS 기반 집중도 보조 추정`
-            : "concentration pending")}
-      </small>
+      {rail.items.map((item, index) => (
+        <RailSegment item={item} key={item.label} showDivider={index < rail.items.length - 1} />
+      ))}
+      <small>{rail.narrative}</small>
     </section>
+  );
+}
+
+function RailSegment({
+  item,
+  showDivider,
+}: {
+  item: { icon: "activity" | "database" | "shield"; label: string; value: string };
+  showDivider: boolean;
+}) {
+  const Icon = item.icon === "database" ? Database : item.icon === "shield" ? ShieldCheck : Activity;
+  return (
+    <>
+      <div>
+        <Icon size={14} />
+        <span>{item.label}</span>
+        <strong>{item.value}</strong>
+      </div>
+      {showDivider ? <i /> : null}
+    </>
   );
 }
 
@@ -252,15 +263,152 @@ function groupFreshness(items: SourceFreshnessItem[]) {
   return [...groups.entries()];
 }
 
-function providerEntries(connections: DataConnections, activeFreshness: SourceFreshnessItem[]) {
+function providerEntries(
+  connections: DataConnections,
+  activeFreshness: SourceFreshnessItem[],
+  activeView: RadarView,
+) {
   const providersWithActiveRows = new Set(activeFreshness.map((item) => item.provider));
   const entries = Object.entries(connections) as Array<[SourceFreshnessProvider, DataConnection]>;
-  if (activeFreshness.length === 0) return entries;
-  return entries.filter(([provider]) => provider === "yahoo_finance" || providersWithActiveRows.has(provider));
+  if (activeFreshness.length === 0) {
+    const fallbackProviders = fallbackProvidersForView(activeView);
+    return entries.filter(([provider]) => fallbackProviders.has(provider));
+  }
+  return entries.filter(([provider]) => providersWithActiveRows.has(provider));
 }
 
 function isActiveFreshness(item: SourceFreshnessItem) {
   return item.source_class !== "held" && item.source_class !== "manual";
+}
+
+function scopedFreshnessItems(
+  data: SectorsResponse,
+  freshness: SourceFreshnessItem[],
+  activeView: RadarView,
+) {
+  const scoped = freshness.filter((item) => sourceFreshnessMatchesView(item, activeView));
+  if (activeView === "layer1") {
+    return mergeFreshness(scoped, layerOneFlowFreshness(data.layer1_flow, data.source === "sample"));
+  }
+  return scoped;
+}
+
+function sourceFreshnessMatchesView(item: SourceFreshnessItem, activeView: RadarView) {
+  if (activeView === "layer1") {
+    return item.provider === "yahoo_finance" && (item.id.startsWith("provider:") || item.id.startsWith("snapshot:"));
+  }
+  if (activeView === "layer2") {
+    return (
+      item.provider === "fred" ||
+      item.provider === "krx_openapi" ||
+      item.id.startsWith("context:") ||
+      item.id === "provider:yahoo_finance" ||
+      item.id === "snapshot:sector_metrics"
+    );
+  }
+  return item.provider === "yahoo_finance" && (item.id.startsWith("provider:") || item.id.startsWith("snapshot:"));
+}
+
+function layerOneFlowFreshness(
+  flow: LayerOneFlowSnapshot | undefined,
+  isSample: boolean,
+): SourceFreshnessItem[] {
+  if (!flow?.data_freshness.series.length) return [];
+  return flow.data_freshness.series.map((series) => ({
+    id: `layer1:${series.series_id}`,
+    label: `Layer 1 ${series.series_id}`,
+    provider: flow.data_freshness.provider,
+    series_id: series.series_id,
+    source_class: flow.data_freshness.source_class,
+    frequency: "intraday_gate",
+    latest_date: series.latest_date,
+    stale: !series.latest_date,
+    status: series.latest_date ? "live" : "unavailable",
+    warning: isSample ? "sample_fallback" : undefined,
+  }));
+}
+
+function mergeFreshness(base: SourceFreshnessItem[], extra: SourceFreshnessItem[]) {
+  const byId = new Map<string, SourceFreshnessItem>();
+  for (const item of [...base, ...extra]) {
+    byId.set(item.id, item);
+  }
+  return [...byId.values()];
+}
+
+function fallbackProvidersForView(activeView: RadarView) {
+  if (activeView === "layer2") return new Set<SourceFreshnessProvider>(["yahoo_finance", "fred", "krx_openapi"]);
+  return new Set<SourceFreshnessProvider>(["yahoo_finance"]);
+}
+
+function freshnessScopeLabel(activeView: RadarView) {
+  if (activeView === "layer1") return "Layer 1";
+  if (activeView === "layer2") return "Layer 2";
+  return "Layer 3";
+}
+
+function contextRailItems(
+  data: SectorsResponse,
+  activeView: RadarView,
+  activeContextCount: number,
+  officialCount: number,
+) {
+  const concentration = data.concentration;
+  const reconciliation = data.context_reconciliation;
+  const validationValue = data.validation.expose_probability ? "확률 표시" : "검증 전";
+
+  if (activeView === "layer1") {
+    const flow = data.layer1_flow;
+    return {
+      items: [
+        { icon: "activity" as const, label: "Market Tape", value: flow ? layerOneStateLabel(flow.state) : "pending" },
+        {
+          icon: "database" as const,
+          label: "Breadth",
+          value: flow ? breadthQualityLabel(flow.breadth_quality.state) : "pending",
+        },
+        { icon: "activity" as const, label: "Risk / Vol", value: flow ? riskStateLabel(flow.risk.state) : "pending" },
+        { icon: "shield" as const, label: "검증", value: validationValue },
+      ],
+      narrative:
+        flow?.narrative ??
+        "Layer 1은 가격 흐름, 섹터 breadth, 변동성 압력을 별도 화면에서 확인합니다.",
+    };
+  }
+
+  if (activeView === "layer2") {
+    const fired = (data.watchlist ?? []).filter((item) => item.status === "fired").length;
+    const accumulation = data.sectors.filter((sector) => sector.modules.participation.state === "accumulation").length;
+    const distribution = data.sectors.filter((sector) => sector.modules.participation.state === "distribution").length;
+    return {
+      items: [
+        { icon: "activity" as const, label: "Market Context", value: `공식 ${officialCount}/${activeContextCount}` },
+        { icon: "database" as const, label: "Participation", value: `${accumulation}/${Math.max(1, accumulation + distribution)} acc.` },
+        { icon: "activity" as const, label: "Risk Trigger", value: `${fired}/${data.watchlist?.length ?? 0} fired` },
+        { icon: "shield" as const, label: "검증", value: validationValue },
+      ],
+      narrative:
+        reconciliation?.narrative ??
+        "Layer 2는 유동성 컨텍스트, ETF 참여도, 리스크 트리거를 별도 화면에서 확인합니다.",
+    };
+  }
+
+  return {
+    items: [
+      { icon: "database" as const, label: "Sector Leadership", value: `${concentration?.top1 ?? data.sectors[0]?.sector_code ?? "N/A"} lead` },
+      {
+        icon: "activity" as const,
+        label: "Constructive",
+        value: `${data.sectors.filter((sector) => sector.quadrant === "leading" || sector.quadrant === "improving").length}/${data.sectors.length}`,
+      },
+      { icon: "activity" as const, label: "Reconciliation", value: reconciliation ? reconciliationLabel(reconciliation.state) : "pending" },
+      { icon: "shield" as const, label: "검증", value: validationValue },
+    ],
+    narrative:
+      concentration?.effective_sector_count
+        ? `effective sectors ${concentration.effective_sector_count.toFixed(1)} · RS 기반 집중도 보조 추정`
+        : "concentration pending",
+  };
 }
 
 function providerLabel(provider: string) {
@@ -281,7 +429,7 @@ function statusLabel(status: string) {
 
 function sourceStatusLabel(status: SourceFreshnessItem["status"]) {
   if (status === "live") return "최신";
-  if (status === "stale") return "지연";
+  if (status === "stale") return "확인 필요";
   if (status === "unavailable") return "사용 불가";
   if (status === "manual_check") return "수동 확인";
   return status;
@@ -517,6 +665,26 @@ function warningLabel(warning?: string) {
     return "WRESBAL은 현금 여력의 보조 지표로만 해석합니다.";
   }
   return warning.replaceAll("_", " ");
+}
+
+function layerOneStateLabel(state: NonNullable<SectorsResponse["layer1_flow"]>["state"]) {
+  if (state === "constructive") return "constructive";
+  if (state === "caution") return "caution";
+  if (state === "mixed") return "mixed";
+  return "data pending";
+}
+
+function breadthQualityLabel(state: NonNullable<SectorsResponse["layer1_flow"]>["breadth_quality"]["state"]) {
+  if (state === "broad") return "broad";
+  if (state === "narrow") return "narrow";
+  if (state === "mixed") return "mixed";
+  return "unknown";
+}
+
+function riskStateLabel(state: NonNullable<SectorsResponse["layer1_flow"]>["risk"]["state"]) {
+  if (state === "calm") return "calm";
+  if (state === "elevated") return "elevated";
+  return "unknown";
 }
 
 function reconciliationLabel(state: NonNullable<SectorsResponse["context_reconciliation"]>["state"]) {

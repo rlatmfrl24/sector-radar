@@ -6,6 +6,7 @@ const RS_WINDOW = 50;
 const MOMENTUM_WINDOW = 10;
 const BREADTH_WINDOWS = [20, 50, 200] as const;
 const PARTICIPATION_WINDOW = 20;
+const DEFAULT_METRIC_HISTORY_DAYS = 180;
 
 type Field = SeriesRow["field"];
 
@@ -48,6 +49,7 @@ export function priceBarsToSeriesRows(
 }
 
 export interface SectorMetricBuildOptions {
+  historyDays?: number;
   holdingCoverage?: {
     date: string | null;
     fresh: number;
@@ -63,87 +65,131 @@ export function buildSectorMetricRows(
   options: SectorMetricBuildOptions = {},
 ): SectorMetricRow[] {
   const series = toSeriesMap(seriesRows);
-  const benchmark = series[BENCHMARK] ?? [];
   const marketContext = buildMarketContextFromSeriesRows(seriesRows, computedAt);
+  const latestDate = latestDateOf(series[BENCHMARK] ?? []);
+
+  return latestDate ? buildSectorMetricRowsForDates(series, marketContext, computedAt, [latestDate], options) : [];
+}
+
+export function buildSectorMetricHistoryRows(
+  seriesRows: SeriesRow[],
+  computedAt: string,
+  options: SectorMetricBuildOptions = {},
+): SectorMetricRow[] {
+  const series = toSeriesMap(seriesRows);
+  const marketContext = buildMarketContextFromSeriesRows(seriesRows, computedAt);
+  const dates = metricSnapshotDates(series[BENCHMARK] ?? [], options.historyDays ?? DEFAULT_METRIC_HISTORY_DAYS);
+
+  return buildSectorMetricRowsForDates(series, marketContext, computedAt, dates, options);
+}
+
+function buildSectorMetricRowsForDates(
+  series: SeriesMap,
+  marketContext: MarketContextCard[],
+  computedAt: string,
+  dates: string[],
+  options: SectorMetricBuildOptions,
+): SectorMetricRow[] {
   const rows: SectorMetricRow[] = [];
 
-  for (const sector of SECTORS) {
-    const sectorBars = series[sector.symbol] ?? [];
-    const rs = buildRelativeStrength(sectorBars, benchmark);
-    const breadth = buildBreadth(sector.representativeHoldings.map((symbol) => series[symbol] ?? []));
-    if (options.partialHoldingRefresh && !breadth.warnings.includes("partial_holding_refresh")) {
-      breadth.warnings.push("partial_holding_refresh");
+  for (const snapshotDate of dates) {
+    const benchmark = barsThroughDate(series[BENCHMARK] ?? [], snapshotDate);
+
+    for (const sector of SECTORS) {
+      const sectorBars = barsThroughDate(series[sector.symbol] ?? [], snapshotDate);
+      const latestDate = latestCommonDate([sectorBars, benchmark]) ?? latestDateOf(sectorBars);
+
+      if (latestDate !== snapshotDate) {
+        continue;
+      }
+
+      const rs = buildRelativeStrength(sectorBars, benchmark);
+      const breadth = buildBreadth(sector.representativeHoldings.map((symbol) => barsThroughDate(series[symbol] ?? [], snapshotDate)));
+      if (options.partialHoldingRefresh && !breadth.warnings.includes("partial_holding_refresh")) {
+        breadth.warnings.push("partial_holding_refresh");
+      }
+      const participation = buildParticipation(sectorBars);
+      const rulebook = buildRulebook({
+        sectorName: sector.name,
+        rs,
+        breadth,
+        participation,
+      });
+
+      const sourceMetrics = {
+        relative_strength: rs.evidence,
+        breadth: { ...breadth.evidence, warnings: breadth.warnings },
+        participation: { ...participation.evidence, warnings: participation.warnings },
+        market_context: marketContext,
+      };
+      const dataFreshness = {
+        latest_price_date: latestDate,
+        computed_at: computedAt,
+        provider: "yahoo_finance",
+        source: "yahoo_finance:chart",
+        market_context_latest_date: latestMarketContextDate(marketContext),
+        refresh_phase: options.refreshPhase ?? null,
+        holding_coverage: options.holdingCoverage ?? null,
+      };
+
+      rows.push({
+        market: MARKET,
+        sector_code: sector.symbol,
+        date: latestDate,
+        benchmark: BENCHMARK,
+        ret_1m: returnOverBars(sectorBars, 21),
+        ret_3m: returnOverBars(sectorBars, 63),
+        ret_6m: returnOverBars(sectorBars, 126),
+        ret_12m: returnOverBars(sectorBars, 252),
+        excess_ret_3m: excessReturn(sectorBars, benchmark, 63),
+        rs_ratio: numericEvidence(rs, "rs_ratio"),
+        rs_momentum: numericEvidence(rs, "rs_momentum"),
+        rrg_quadrant: rs.state,
+        pct_above_20ma: numericEvidence(breadth, "pct_above_20ma"),
+        pct_above_50ma: numericEvidence(breadth, "pct_above_50ma"),
+        pct_above_200ma: numericEvidence(breadth, "pct_above_200ma"),
+        breadth_state: breadth.state,
+        breadth_transition: breadth.transition,
+        rvol_20: numericEvidence(participation, "rvol_20"),
+        obv_slope_20: numericEvidence(participation, "obv_slope_20"),
+        cmf_20: numericEvidence(participation, "cmf_20"),
+        participation_state: participation.state,
+        participation_transition: participation.transition,
+        catalyst_state: null,
+        catalyst_transition: null,
+        rule_pattern: rulebook.leadPattern,
+        direction: rulebook.direction,
+        strength: rulebook.strength,
+        conviction_label: rulebook.convictionLabel,
+        narrative: rulebook.narrative,
+        risks_json: JSON.stringify(rulebook.risks),
+        invalidation_json: JSON.stringify(rulebook.invalidation),
+        source_metrics_json: JSON.stringify(sourceMetrics),
+        data_freshness_json: JSON.stringify(dataFreshness),
+        validation_status: "unvalidated",
+        expose_probability: 0,
+        computed_at: computedAt,
+      });
     }
-    const participation = buildParticipation(sectorBars);
-    const rulebook = buildRulebook({
-      sectorName: sector.name,
-      rs,
-      breadth,
-      participation,
-    });
-    const latestDate = latestCommonDate([sectorBars, benchmark]) ?? latestDateOf(sectorBars);
-
-    if (!latestDate) {
-      continue;
-    }
-
-    const sourceMetrics = {
-      relative_strength: rs.evidence,
-      breadth: { ...breadth.evidence, warnings: breadth.warnings },
-      participation: { ...participation.evidence, warnings: participation.warnings },
-      market_context: marketContext,
-    };
-    const dataFreshness = {
-      latest_price_date: latestDate,
-      computed_at: computedAt,
-      provider: "yahoo_finance",
-      source: "yahoo_finance:chart",
-      market_context_latest_date: latestMarketContextDate(marketContext),
-      refresh_phase: options.refreshPhase ?? null,
-      holding_coverage: options.holdingCoverage ?? null,
-    };
-
-    rows.push({
-      market: MARKET,
-      sector_code: sector.symbol,
-      date: latestDate,
-      benchmark: BENCHMARK,
-      ret_1m: returnOverBars(sectorBars, 21),
-      ret_3m: returnOverBars(sectorBars, 63),
-      ret_6m: returnOverBars(sectorBars, 126),
-      ret_12m: returnOverBars(sectorBars, 252),
-      excess_ret_3m: excessReturn(sectorBars, benchmark, 63),
-      rs_ratio: numericEvidence(rs, "rs_ratio"),
-      rs_momentum: numericEvidence(rs, "rs_momentum"),
-      rrg_quadrant: rs.state,
-      pct_above_20ma: numericEvidence(breadth, "pct_above_20ma"),
-      pct_above_50ma: numericEvidence(breadth, "pct_above_50ma"),
-      pct_above_200ma: numericEvidence(breadth, "pct_above_200ma"),
-      breadth_state: breadth.state,
-      breadth_transition: breadth.transition,
-      rvol_20: numericEvidence(participation, "rvol_20"),
-      obv_slope_20: numericEvidence(participation, "obv_slope_20"),
-      cmf_20: numericEvidence(participation, "cmf_20"),
-      participation_state: participation.state,
-      participation_transition: participation.transition,
-      catalyst_state: null,
-      catalyst_transition: null,
-      rule_pattern: rulebook.leadPattern,
-      direction: rulebook.direction,
-      strength: rulebook.strength,
-      conviction_label: rulebook.convictionLabel,
-      narrative: rulebook.narrative,
-      risks_json: JSON.stringify(rulebook.risks),
-      invalidation_json: JSON.stringify(rulebook.invalidation),
-      source_metrics_json: JSON.stringify(sourceMetrics),
-      data_freshness_json: JSON.stringify(dataFreshness),
-      validation_status: "unvalidated",
-      expose_probability: 0,
-      computed_at: computedAt,
-    });
   }
 
   return rows;
+}
+
+function metricSnapshotDates(benchmarkBars: DailyBar[], historyDays: number) {
+  return benchmarkBars
+    .filter((bar) => bar.close !== undefined && isPositive(bar.close))
+    .map((bar) => bar.date)
+    .slice(-normalizeHistoryDays(historyDays));
+}
+
+function normalizeHistoryDays(value: number) {
+  if (!Number.isFinite(value)) return DEFAULT_METRIC_HISTORY_DAYS;
+  return Math.min(DEFAULT_METRIC_HISTORY_DAYS, Math.max(1, Math.floor(value)));
+}
+
+function barsThroughDate(bars: DailyBar[], date: string) {
+  return bars.filter((bar) => bar.date <= date);
 }
 
 export function shouldSkipRateLimited(nextAllowedAt: string | null | undefined, now: Date): boolean {

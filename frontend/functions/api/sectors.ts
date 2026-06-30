@@ -155,6 +155,11 @@ function toSectorSnapshot(row: SectorMetricRow) {
     latest_price_date: row.date,
     computed_at: row.computed_at,
   });
+  const relativeStrengthEvidence = {
+    ...moduleEvidence(sourceMetrics.relative_strength),
+    rs_ratio: row.rs_ratio,
+    rs_momentum: row.rs_momentum,
+  };
 
   return {
     as_of: row.date,
@@ -167,10 +172,7 @@ function toSectorSnapshot(row: SectorMetricRow) {
         state: classifyRs(row.rs_ratio),
         transition: classifyMomentum(row.rs_momentum),
         strength: row.rs_ratio == null ? 0 : Math.min(4, Math.max(1, Math.round(row.rs_ratio / 34))),
-        evidence: {
-          rs_ratio: row.rs_ratio,
-          rs_momentum: row.rs_momentum,
-        },
+        evidence: relativeStrengthEvidence,
         warnings: [],
       },
       breadth: {

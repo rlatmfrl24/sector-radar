@@ -246,6 +246,7 @@ export interface RefreshResponse {
 export interface HistoryResponse {
   market: string;
   timeframe?: HistoryTimeframe;
+  limit?: number;
   coverage?: {
     requested_days: number;
     available_sector_days: number;

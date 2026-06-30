@@ -81,13 +81,13 @@ button:focus-visible {
   z-index: 10;
   top: 0;
   display: grid;
-  grid-template-columns: auto minmax(260px, 360px) minmax(0, 1fr);
+  grid-template-columns: auto minmax(300px, 370px) minmax(0, 1fr);
   align-items: center;
-  gap: 14px;
-  min-height: 58px;
+  gap: 10px;
+  min-height: 52px;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-lg);
-  padding: 9px 12px;
+  padding: 7px 10px;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: var(--shadow-1);
   backdrop-filter: blur(16px);
@@ -122,6 +122,7 @@ button:focus-visible {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  min-width: 0;
   overflow: visible;
   padding-bottom: 1px;
 }
@@ -319,22 +320,25 @@ button:focus-visible {
 
 .view-switch {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  justify-self: start;
+  width: min(100%, 370px);
+  gap: 3px;
   min-width: 0;
   border: 1px solid var(--hairline);
-  border-radius: var(--pill);
-  padding: 4px;
+  border-radius: var(--radius-lg);
+  padding: 3px;
   background: #f8f9ff;
 }
 
 .view-switch button {
   display: grid;
+  align-content: center;
   min-width: 0;
-  min-height: 38px;
+  min-height: 31px;
   border: 0;
-  border-radius: var(--pill);
-  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  padding: 4px 9px;
   background: transparent;
   color: var(--ink-mute);
   cursor: pointer;
@@ -346,7 +350,7 @@ button:focus-visible {
   color: var(--primary-deep);
   box-shadow:
     rgba(83, 58, 253, 0.18) 0 0 0 1px,
-    var(--shadow-1);
+    rgba(83, 58, 253, 0.08) 0 2px 8px;
 }
 
 .view-switch strong,
@@ -357,13 +361,15 @@ button:focus-visible {
 }
 
 .view-switch strong {
-  font-size: var(--fs-control);
+  font-size: var(--fs-control-xs);
   font-weight: 600;
+  line-height: 1.1;
 }
 
 .view-switch span {
-  margin-top: 1px;
-  font-size: var(--fs-control-xs);
+  margin-top: 0;
+  font-size: 9px;
+  line-height: 1.1;
 }
 
 .summary-strip {
@@ -887,6 +893,21 @@ button:focus-visible {
   display: grid;
   gap: 10px;
   min-width: 0;
+}
+
+.view-workspace > .layer-one,
+.view-workspace > .layer-two {
+  grid-template-rows: auto auto;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  scrollbar-gutter: stable;
+}
+
+.view-workspace > .layer-one .flow-board,
+.view-workspace > .layer-two .liquidity-board {
+  height: auto;
 }
 
 .flow-liquidity-view {
@@ -3680,7 +3701,7 @@ button:focus-visible {
 
 .leadership-workspace {
   display: grid;
-  grid-template-columns: 318px minmax(460px, 1fr) 392px;
+  grid-template-columns: 300px minmax(640px, 1fr) 360px;
   gap: 12px;
   align-items: stretch;
   height: 100%;
@@ -3691,6 +3712,7 @@ button:focus-visible {
 }
 
 .layer-three {
+  --layer3-rrg-pair-height: clamp(340px, 44vh, 480px);
   --layer3-treemap-height: clamp(220px, 25vh, 270px);
   grid-template-rows: auto auto minmax(0, 1fr);
   height: 100%;
@@ -3949,11 +3971,24 @@ button:focus-visible {
 
 .analysis-stack {
   display: grid;
-  grid-template-rows: minmax(160px, 1fr) minmax(var(--layer3-treemap-height), auto);
+  grid-template-rows: minmax(var(--layer3-rrg-pair-height), 1fr) minmax(var(--layer3-treemap-height), auto);
   gap: 12px;
   height: 100%;
-  min-height: 0;
+  min-height: calc(var(--layer3-rrg-pair-height) + var(--layer3-treemap-height) + 12px);
   overflow: visible;
+}
+
+.rrg-analysis-pair {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.35fr) minmax(260px, 0.9fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.rrg-analysis-pair .rrg-card,
+.rrg-analysis-pair .rrg-movement-card {
+  height: 100%;
+  min-height: 0;
 }
 
 .dashboard-panel {
@@ -4059,109 +4094,218 @@ button:focus-visible {
   font-weight: 600;
 }
 
-.rrg-trail {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
-.rrg-trail .trail-underlay,
-.rrg-trail .trail-line {
-  fill: none;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.rrg-trail .trail-underlay {
-  opacity: 0.58;
-  stroke: rgba(8, 14, 42, 0.5);
-  stroke-width: 4;
-}
-
-.rrg-trail .trail-line {
-  opacity: 0.92;
-  stroke: rgba(245, 248, 255, 0.9);
-  stroke-width: 1.75;
-}
-
-.rrg-trail-points {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  pointer-events: none;
-}
-
-.rrg-trail-points span {
-  position: absolute;
-  width: 5px;
-  height: 5px;
-  transform: translate(-50%, -50%);
-  border: 1px solid rgba(245, 248, 255, 0.82);
-  border-radius: 50%;
-  background: rgba(245, 248, 255, 0.88);
-  box-shadow:
-    rgba(8, 14, 42, 0.46) 0 0 0 1px,
-    rgba(255, 255, 255, 0.14) 0 0 6px;
-}
-
-.rrg-trail-status {
-  display: inline-flex;
-  position: absolute;
-  z-index: 3;
-  top: 10px;
-  left: 50%;
-  align-items: center;
-  max-width: calc(100% - 140px);
-  transform: translateX(-50%);
-  gap: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: var(--pill);
-  padding: 5px 8px;
-  background: rgba(18, 20, 69, 0.82);
-  box-shadow: rgba(8, 14, 42, 0.2) 0 8px 18px;
-  color: rgba(255, 255, 255, 0.82);
-  font-size: var(--fs-xxs);
-  pointer-events: none;
-}
-
-.rrg-trail-status strong,
-.rrg-trail-status span {
+.rrg-movement-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
+}
+
+.movement-body {
+  display: grid;
+  grid-template-areas:
+    "copy"
+    "metrics"
+    "chart"
+    "legend";
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.movement-copy {
+  display: grid;
+  grid-area: copy;
+  align-content: start;
+  gap: 3px;
+  min-width: 0;
+}
+
+.movement-copy strong,
+.movement-copy span,
+.movement-copy p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.movement-copy strong {
+  color: var(--ink);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.movement-copy span {
+  color: var(--ink-mute);
+  font-feature-settings: "tnum", "ss01";
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.movement-copy p {
+  display: -webkit-box;
+  margin: 3px 0 0;
+  -webkit-box-orient: vertical;
+  color: var(--ink-secondary);
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+  -webkit-line-clamp: 2;
+}
+
+.movement-metrics {
+  display: grid;
+  grid-area: metrics;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.movement-metrics div {
+  min-width: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  background: #fbfdff;
+}
+
+.movement-metrics span {
+  display: block;
+  overflow: hidden;
+  color: var(--ink-mute);
+  font-size: var(--fs-xxs);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.movement-metrics strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 6px;
+  color: var(--ink);
+  font-feature-settings: "tnum", "ss01";
+  font-size: var(--fs-md);
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.rrg-trail-status strong {
-  color: var(--canvas);
-  font-weight: 650;
+.movement-chart {
+  display: grid;
+  position: relative;
+  grid-area: chart;
+  min-width: 0;
+  min-height: 112px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: 8px 34px 8px 8px;
+  background:
+    linear-gradient(180deg, rgba(83, 58, 253, 0.035), rgba(38, 169, 128, 0.028)),
+    #fbfdff;
 }
 
-.rrg-trail-status span {
-  color: rgba(255, 255, 255, 0.68);
-  font-weight: 600;
+.movement-chart svg {
+  width: 100%;
+  height: 100%;
+  min-height: 74px;
 }
 
-.rrg-trail-status .limited {
-  color: #f8cf73;
+.movement-grid {
+  stroke: rgba(52, 76, 103, 0.13);
+  stroke-width: 1;
 }
 
-.rrg-empty-trail {
+.movement-grid.mid {
+  stroke: rgba(83, 58, 253, 0.28);
+  stroke-dasharray: 3 3;
+}
+
+.movement-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.2;
+}
+
+.movement-line.ratio {
+  stroke: var(--primary);
+}
+
+.movement-line.momentum {
+  stroke: var(--good);
+}
+
+.movement-end {
+  fill: var(--canvas);
+  stroke-width: 2;
+}
+
+.movement-end.ratio {
+  stroke: var(--primary);
+}
+
+.movement-end.momentum {
+  stroke: var(--good);
+}
+
+.movement-axis-labels {
+  display: grid;
   position: absolute;
-  z-index: 2;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: var(--pill);
-  padding: 7px 10px;
-  background: rgba(18, 20, 69, 0.72);
-  color: rgba(255, 255, 255, 0.72);
+  top: 9px;
+  right: 8px;
+  bottom: 9px;
+  align-content: space-between;
+  color: var(--ink-mute);
+  font-feature-settings: "tnum", "ss01";
+  font-size: var(--fs-xxs);
+  text-align: right;
+  pointer-events: none;
+}
+
+.movement-empty {
+  display: grid;
+  place-items: center;
+  min-height: 74px;
+  color: var(--ink-mute);
   font-size: var(--fs-xs);
   font-weight: 600;
-  pointer-events: none;
+}
+
+.movement-legend {
+  display: flex;
+  grid-area: legend;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 7px;
+  min-width: 74px;
+}
+
+.movement-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-secondary);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.movement-legend span::before {
+  width: 16px;
+  height: 3px;
+  border-radius: var(--pill);
+  content: "";
+}
+
+.movement-legend .ratio::before {
+  background: var(--primary);
+}
+
+.movement-legend .momentum::before {
+  background: var(--good);
 }
 
 .axis {
@@ -4693,8 +4837,9 @@ button:focus-visible {
   .leadership-workspace .analysis-stack {
     flex: 1 1 560px;
     display: grid;
-    grid-template-rows: minmax(150px, 1fr) minmax(var(--layer3-treemap-height), auto);
-    height: clamp(410px, calc(100dvh - 310px), 600px);
+    grid-template-rows: minmax(var(--layer3-rrg-pair-height), 1fr) minmax(var(--layer3-treemap-height), auto);
+    height: auto;
+    min-height: calc(var(--layer3-rrg-pair-height) + var(--layer3-treemap-height) + 12px);
     min-width: min(560px, 100%);
     overflow: visible;
   }
@@ -4736,6 +4881,20 @@ button:focus-visible {
 @media (max-width: 1220px) {
   .leadership-workspace {
     display: flex;
+  }
+
+  .movement-body {
+    grid-template-areas:
+      "copy"
+      "metrics"
+      "chart"
+      "legend";
+    grid-template-columns: 1fr;
+  }
+
+  .movement-legend {
+    flex-direction: row;
+    justify-content: flex-start;
   }
 
   .liquidity-grid {
@@ -4951,8 +5110,9 @@ button:focus-visible {
   }
 
   .leadership-workspace .analysis-stack {
-    height: clamp(330px, calc(100dvh - 310px), 520px);
-    grid-template-rows: minmax(140px, 1fr) minmax(var(--layer3-treemap-height), auto);
+    height: auto;
+    min-height: calc(var(--layer3-rrg-pair-height) + var(--layer3-treemap-height) + 12px);
+    grid-template-rows: minmax(var(--layer3-rrg-pair-height), 1fr) minmax(var(--layer3-treemap-height), auto);
     overflow: visible;
   }
 
@@ -5013,7 +5173,7 @@ button:focus-visible {
   }
 
   .view-switch {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     border-radius: var(--radius-lg);
   }
 
@@ -5122,14 +5282,6 @@ button:focus-visible {
 
   .source-row-actions {
     align-self: center;
-  }
-
-  .rrg-trail-status {
-    right: 10px;
-    left: 10px;
-    justify-content: center;
-    max-width: none;
-    transform: none;
   }
 
   .context-rail {
@@ -5331,6 +5483,10 @@ button:focus-visible {
     overflow: visible;
   }
 
+  .rrg-analysis-pair {
+    grid-template-columns: 1fr;
+  }
+
   .rrg-card {
     flex: 0 0 auto;
     min-height: clamp(300px, 44vh, 410px);
@@ -5444,6 +5600,23 @@ button:focus-visible {
     flex: 0 0 320px;
   }
 
+  .movement-body,
+  .movement-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .movement-body {
+    grid-template-areas:
+      "copy"
+      "metrics"
+      "chart"
+      "legend";
+  }
+
+  .movement-chart {
+    min-height: 120px;
+  }
+
   .tree-tile {
     flex-basis: 31%;
     min-width: 88px;
@@ -5484,13 +5657,36 @@ button:focus-visible {
   }
 }
 
-@media (max-height: 620px) and (min-width: 901px), (max-width: 700px) {
+@media (max-height: 620px) and (min-width: 901px) {
+  .layer-three {
+    --layer3-rrg-pair-height: 330px;
+    --layer3-treemap-height: 170px;
+  }
+
+  .leadership-workspace .analysis-stack {
+    height: auto;
+    min-height: calc(var(--layer3-rrg-pair-height) + var(--layer3-treemap-height) + 12px);
+    grid-template-rows: minmax(var(--layer3-rrg-pair-height), 1fr) minmax(var(--layer3-treemap-height), auto);
+  }
+
+  .rrg-analysis-pair .rrg-card,
+  .rrg-analysis-pair .rrg-movement-card {
+    min-height: 0;
+  }
+
+  .rrg-plot {
+    display: block;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 700px) {
   .layer-three {
     --layer3-treemap-height: 190px;
   }
 
   .leadership-workspace .analysis-stack {
-    height: clamp(300px, calc(100dvh - 300px), 340px);
+    height: auto;
     grid-template-rows: minmax(84px, auto) minmax(var(--layer3-treemap-height), auto);
   }
 

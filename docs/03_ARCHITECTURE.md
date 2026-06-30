@@ -199,7 +199,7 @@ frontend/src/features/radar/model.ts
   정렬, 그룹핑, 패턴 클래스, 숫자 포맷 등 순수 helper
 
 frontend/src/features/radar/components/
-  대시보드 top bar, Layer 1+2, Layer 3 화면 컴포넌트와 공통 패널 부품
+  대시보드 top bar, Layer 1, Layer 2, Layer 3 화면 컴포넌트와 공통 패널 부품
 
 frontend/src/types.ts
   docs/09_API_CONTRACT.md와 맞춰야 하는 JSON 타입

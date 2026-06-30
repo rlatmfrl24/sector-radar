@@ -12,7 +12,7 @@ import type {
   SeriesRow,
 } from "../contracts";
 import { refreshFredMarketContext, refreshKrxMarketContext } from "../contextRefresh";
-import { buildSectorMetricRows, priceBarsToSeriesRows } from "../engine";
+import { buildSectorMetricHistoryRows, buildSectorMetricRows, priceBarsToSeriesRows } from "../engine";
 import { FredProvider } from "../fredProvider";
 import { KrxOpenApiProvider } from "../krxProvider";
 import { YahooChartProvider } from "../providers";
@@ -165,6 +165,35 @@ describe("Cloudflare ingest refresh", () => {
     }
   });
 
+  it("keeps official market context evidence when Yahoo refresh rebuilds sector snapshots", async () => {
+    const store = new MemoryRefreshStore();
+    await store.upsertSeries([
+      {
+        series_id: "FRED:WALCL",
+        date: "2026-06-20",
+        field: "value",
+        value: 6_400_000,
+        source: "fred",
+        fetched_at: "2026-06-23T20:00:00+00:00",
+      },
+    ]);
+    const provider = new FakeProvider(makeBars(allSymbols(), 260));
+
+    await refreshMarketData(store, provider, {
+      now: new Date("2026-06-23T20:30:00Z"),
+      refreshIntervalMinutes: 15,
+    });
+
+    const latestMetric = [...store.metrics.values()].find((row) => row.date === "2026-06-23");
+    const freshness = JSON.parse(latestMetric?.data_freshness_json ?? "{}") as Record<string, unknown>;
+    const sourceMetrics = JSON.parse(latestMetric?.source_metrics_json ?? "{}") as {
+      market_context?: Array<{ source_class?: string }>;
+    };
+
+    expect(freshness.market_context_latest_date).toBe("2026-06-20");
+    expect(sourceMetrics.market_context?.some((card) => card.source_class === "official")).toBe(true);
+  });
+
   it("does not call the provider inside the 15 minute rate gate", async () => {
     const store = new MemoryRefreshStore();
     const provider = new FakeProvider(makeBars(allSymbols(), 260));
@@ -272,6 +301,63 @@ describe("Cloudflare ingest refresh", () => {
       latest_price_date: "2026-06-23",
     });
     expect(store.status?.message).toContain("restored last successful snapshot");
+  });
+
+  it("recovers old refreshing status even when next scheduled collection is in the future", async () => {
+    const store = new MemoryRefreshStore();
+    store.status = {
+      provider: "yahoo_finance",
+      status: "refreshing",
+      last_attempt_at: "2026-06-29T23:45:00+00:00",
+      last_success_at: "2026-06-29T23:30:00+00:00",
+      next_allowed_at: "2026-06-30T20:30:00+00:00",
+      latest_price_date: "2026-06-29",
+      symbol_count: 1,
+      rows_upserted: 0,
+      message: "Prior holdings shard did not finalize.",
+    };
+    const provider = new FakeProvider(makeBars(allSymbols(), 260));
+
+    const result = await refreshMarketData(store, provider, {
+      now: new Date("2026-06-30T00:30:00Z"),
+      refreshIntervalMinutes: 15,
+    });
+
+    expect(result.status).toBe("skipped_market_schedule");
+    expect(result.data_connection.status).toBe("success");
+    expect(provider.calls).toBe(0);
+    expect(store.status).toMatchObject({
+      status: "success",
+      last_success_at: "2026-06-29T23:30:00+00:00",
+      latest_price_date: "2026-06-29",
+    });
+    expect(store.status?.message).toContain("restored last successful snapshot");
+  });
+
+  it("bypasses a future rate gate when an active-window refresh is stale", async () => {
+    const store = new MemoryRefreshStore();
+    store.status = {
+      provider: "yahoo_finance",
+      status: "refreshing",
+      last_attempt_at: "2026-06-23T19:45:00+00:00",
+      last_success_at: "2026-06-22T20:45:00+00:00",
+      next_allowed_at: "2026-06-24T20:30:00+00:00",
+      latest_price_date: "2026-06-22",
+      symbol_count: 38,
+      rows_upserted: 0,
+      message: "Prior active-window run did not finalize.",
+    };
+    const provider = new FakeProvider(makeBars(allSymbols(), 260));
+
+    const result = await refreshMarketData(store, provider, {
+      now: new Date("2026-06-23T20:30:00Z"),
+      refreshIntervalMinutes: 15,
+    });
+
+    expect(result.status).toBe("success");
+    expect(provider.calls).toBe(1);
+    expect(store.status?.status).toBe("success");
+    expect(store.status?.message).toContain("Previous refresh from 2026-06-23T19:45:00+00:00 did not finalize");
   });
 
   it("fetches existing symbols incrementally and only missing symbols with full history", async () => {
@@ -549,6 +635,52 @@ describe("Cloudflare ingest refresh", () => {
     });
   });
 
+  it("lets stale FRED refreshing status retry during its active window", async () => {
+    const store = new MemoryRefreshStore();
+    store.providerStatuses.set("fred", {
+      provider: "fred",
+      status: "refreshing",
+      last_attempt_at: "2026-06-29T20:00:00+00:00",
+      last_success_at: "2026-06-26T21:00:00+00:00",
+      next_allowed_at: "2026-06-30T20:45:00+00:00",
+      latest_price_date: "2026-06-25",
+      symbol_count: 5,
+      rows_upserted: 0,
+      message: "Prior FRED run did not finalize.",
+    });
+    let calls = 0;
+    const provider = {
+      name: "fred",
+      async fetchDefaultSeries() {
+        calls += 1;
+        return {
+          failures: [],
+          rows: [
+            {
+              series_id: "FRED:WALCL",
+              date: "2026-06-26",
+              field: "value",
+              value: 6_400_000,
+              source: "fred",
+              fetched_at: "2026-06-29T20:45:00+00:00",
+            },
+          ],
+        };
+      },
+    };
+
+    const outcome = await refreshFredMarketContext(store, provider, {
+      now: new Date("2026-06-29T20:45:00Z"),
+    });
+
+    expect(outcome).toBe("success");
+    expect(calls).toBe(1);
+    expect(store.providerStatuses.get("fred")).toMatchObject({
+      status: "success",
+      latest_price_date: "2026-06-26",
+    });
+  });
+
   it("records the next KRX collection window when a cron run is off schedule", async () => {
     const store = new MemoryRefreshStore();
     store.providerStatuses.set("krx_openapi", {
@@ -701,6 +833,20 @@ describe("Cloudflare ingest refresh", () => {
     expect(metrics.length).toBeGreaterThanOrEqual(10);
     expect(metrics[0]?.validation_status).toBe("unvalidated");
     expect(metrics[0]?.expose_probability).toBe(0);
+  });
+
+  it("backfills bounded sector metric history from stored price series", () => {
+    const bars = makeBars(allSymbols(), 260);
+    const rows = priceBarsToSeriesRows(bars, "fixture", "2026-06-24T00:00:00+00:00");
+    const metrics = buildSectorMetricHistoryRows(rows, "2026-06-24T00:00:00+00:00", { historyDays: 30 });
+    const dates = new Set(metrics.map((row) => row.date));
+
+    expect(dates.size).toBe(30);
+    expect(metrics.length).toBeGreaterThanOrEqual(30 * 10);
+    for (const row of metrics) {
+      expect(row.validation_status).toBe("unvalidated");
+      expect(row.expose_probability).toBe(0);
+    }
   });
 
   it("uses the latest market context date across all context cards", () => {

@@ -20,7 +20,7 @@ describe("radar derived API fields", () => {
       marketContext: [
         context({
           code: "S03",
-          data_freshness: { latest_date: "2026-06-20" },
+          data_freshness: { latest_date: "2026-06-18" },
           source: "FRED: BAMLH0A0HYM2, VIXCLS",
           source_class: "official",
         }),
@@ -32,6 +32,44 @@ describe("radar derived API fields", () => {
       provider: "fred",
       status: "stale",
       stale: true,
+    });
+  });
+
+  it("does not mark daily FRED rows stale just because a weekend passed", () => {
+    const input = baseInput({
+      marketContext: [
+        context({
+          code: "S03",
+          data_freshness: { latest_date: "2026-06-22" },
+          source: "FRED: BAMLH0A0HYM2, VIXCLS",
+          source_class: "official",
+        }),
+      ],
+      now: new Date("2026-06-25T00:00:00Z"),
+    });
+
+    const freshness = buildSourceFreshness(input);
+    expect(freshness.find((item) => item.id === "context:S03")).toMatchObject({
+      provider: "fred",
+      status: "live",
+      stale: false,
+    });
+  });
+
+  it("keeps a fresh provider row live while a new collection is still running", () => {
+    const input = baseInput({
+      dataConnection: {
+        ...connection("yahoo_finance", "2026-06-24"),
+        status: "refreshing",
+        last_success_at: "2026-06-24T20:30:00+00:00",
+      },
+      now: new Date("2026-06-25T00:00:00Z"),
+    });
+
+    const freshness = buildSourceFreshness(input);
+    expect(freshness.find((item) => item.id === "provider:yahoo_finance")).toMatchObject({
+      status: "live",
+      stale: false,
     });
   });
 

@@ -57,7 +57,7 @@ export function DashboardTopBar({
             value={item.value}
           />
         ))}
-        {activeView === "flow" ? (
+        {activeView === "layer1" ? (
           <ExplainModeToggle enabled={explainMode} onChange={onExplainModeChange} />
         ) : null}
         <button
@@ -85,7 +85,7 @@ function ExplainModeToggle({
 }) {
   const tooltip = enabled
     ? "전문 대시보드 화면으로 돌아갑니다."
-    : "Layer 1+2를 초보자용 쉬운 해설 화면으로 전환합니다.";
+    : "Layer 1 흐름을 초보자용 쉬운 해설 화면으로 전환합니다.";
   return (
     <button
       aria-label={`${enabled ? "쉬운 화면 켜짐" : "쉬운 화면 꺼짐"}. ${tooltip}`}
@@ -109,7 +109,8 @@ function ViewSwitch({
   onViewChange: (view: RadarView) => void;
 }) {
   const views: Array<{ detail: string; id: RadarView; label: string }> = [
-    { detail: "Layer 1 + 2", id: "flow", label: "흐름·여력" },
+    { detail: "Layer 1", id: "layer1", label: "흐름" },
+    { detail: "Layer 2", id: "layer2", label: "여력" },
     { detail: "Layer 3", id: "leadership", label: "주도·섹터" },
   ];
 
@@ -221,10 +222,10 @@ function buildStatusItems(data: SectorsResponse): HeaderStatusItem[] {
       value: connectionValue,
     },
     {
-      label: "Validation",
+      label: "검증",
       tone: "guard",
-      tooltip: `검증 상태: ${data.validation.status}. 확률 노출: ${data.validation.expose_probability ? "on" : "off"}. Walk-forward 검증 전에는 probability를 표시하지 않습니다.`,
-      value: data.validation.expose_probability ? "prob on" : "prob off",
+      tooltip: `현재 검증 상태: ${validationStatusLabel(data.validation.status)}. 확률 노출: ${data.validation.expose_probability ? "켜짐" : "숨김"}. Walk-forward 검증 전에는 승률, 상승 확률, 기대수익률을 판단 문구에 쓰지 않습니다.`,
+      value: data.validation.expose_probability ? "확률 표시" : "검증 전",
     },
   ];
 }
@@ -274,5 +275,10 @@ function sourceLabel(source: SectorsResponse["source"]) {
 function statusLabel(status: string) {
   if (status === "skipped_rate_limited") return "rate gated";
   if (status === "never_run") return "never run";
+  return status;
+}
+
+function validationStatusLabel(status: string) {
+  if (status === "unvalidated") return "검증 전";
   return status;
 }

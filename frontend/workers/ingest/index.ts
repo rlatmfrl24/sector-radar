@@ -44,6 +44,7 @@ async function runRefresh(env: Env, now: Date): Promise<void> {
   const store = new D1RefreshStore(env.DB);
   const yahooProvider = new YahooChartProvider({
     concurrency: parseNumber(env.YAHOO_FETCH_CONCURRENCY, 2),
+    fetchTimeoutMs: parseNumber(readOptionalEnv(env, "YAHOO_FETCH_TIMEOUT_MS"), 8_000),
   });
   const interval = parseRefreshInterval(env.REFRESH_INTERVAL_MINUTES);
   const legacyBudget = parseNumber(env.YAHOO_FETCH_BUDGET, 38);

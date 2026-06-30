@@ -3,9 +3,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ContextRail,
   DashboardTopBar,
-  FlowLiquidityView,
   FreshnessBar,
+  LayerOneFlowView,
   LayerThreeLeadership,
+  LayerTwoLiquidityView,
   LoadingScreen,
 } from "./features/radar/components";
 import {
@@ -31,7 +32,7 @@ function App() {
   const [data, setData] = useState<SectorsResponse | null>(null);
   const [history, setHistory] = useState<HistoryResponse | null>(null);
   const [validation, setValidation] = useState<ValidationResponse | null>(null);
-  const [activeView, setActiveView] = useState<RadarView>("flow");
+  const [activeView, setActiveView] = useState<RadarView>("layer1");
   const [explainMode, setExplainMode] = useState(() => readExplainModePreference());
   const [historyTimeframe, setHistoryTimeframe] = useState<HistoryTimeframe>("90D");
   const [selectedCode, setSelectedCode] = useState("");
@@ -148,22 +149,26 @@ function App() {
         onViewChange={setActiveView}
       />
       <section className="view-workspace" aria-label="sector radar workspace">
-        <FreshnessBar data={data} />
-        <ContextRail data={data} />
-        {activeView === "flow" ? (
-          <FlowLiquidityView
+        <FreshnessBar activeView={activeView} data={data} />
+        <ContextRail activeView={activeView} data={data} />
+        {activeView === "layer1" ? (
+          <LayerOneFlowView
             explainMode={explainMode}
             grouped={grouped}
             healthyBreadthCount={healthyBreadthCount}
             layerOneFlow={data.layer1_flow}
-            marketContext={data.market_context ?? []}
+            reconciliation={data.context_reconciliation}
+            sectors={rankedSectors}
+            warnings={warnings}
+            weakBreadthCount={weakBreadthCount}
+          />
+        ) : activeView === "layer2" ? (
+          <LayerTwoLiquidityView
             contextHistory={history?.market_context ?? []}
-            contextReconciliation={data.context_reconciliation}
+            marketContext={data.market_context ?? []}
             sectors={rankedSectors}
             selected={selected}
             watchlist={data.watchlist ?? []}
-            warnings={warnings}
-            weakBreadthCount={weakBreadthCount}
           />
         ) : (
           <LayerThreeLeadership

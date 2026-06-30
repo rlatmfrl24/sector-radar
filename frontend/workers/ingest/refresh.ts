@@ -9,8 +9,8 @@ import type {
   RefreshStore,
   SeriesRow,
 } from "./contracts";
-import { buildSectorMetricRows, priceBarsToSeriesRows, shouldSkipRateLimited } from "./engine";
-import { buildMarketContextFromSeriesRows, marketContextCardsToRows } from "./marketContext";
+import { buildSectorMetricHistoryRows, priceBarsToSeriesRows, shouldSkipRateLimited } from "./engine";
+import { buildMarketContextFromSeriesRows, marketContextCardsToRows, marketContextSeriesIds } from "./marketContext";
 import {
   MARKET,
   allSymbols,
@@ -30,6 +30,7 @@ const INCREMENTAL_RANGE = "10d";
 const LOOKBACK_DAYS = 430;
 const RUN_TYPE = "cloudflare_yahoo_refresh";
 const MARKET_TIME_ZONE = "America/New_York";
+const STALE_REFRESHING_AFTER_MINUTES = 30;
 const POST_CLOSE_CORE_START_MINUTE = 16 * 60 + 20;
 const POST_CLOSE_CORE_END_MINUTE = 16 * 60 + 45;
 const POST_CLOSE_HOLDINGS_END_MINUTE = 20 * 60;
@@ -101,7 +102,9 @@ export async function refreshMarketData(
     return skippedOutcome(plan.status, provider.name, skippedStatus, skippedStatus.message ?? plan.message, refreshIntervalMinutes);
   }
 
-  if (shouldSkipRateLimited(existing?.next_allowed_at, now)) {
+  const staleRefreshing = isStaleRefreshing(existing, now);
+
+  if (shouldSkipRateLimited(existing?.next_allowed_at, now) && !staleRefreshing) {
     const skipped = {
       ...baseStatus(provider.name, existing),
       status: "skipped_rate_limited" as const,
@@ -125,7 +128,7 @@ export async function refreshMarketData(
   const preFetchRows = await store.readSeries(fetchSymbols, lookbackStart);
   const fetchPlan = buildFetchPlan(fetchSymbols, preFetchRows);
   const runId = buildRunId(provider.name, attemptedAt);
-  const staleRecoveryMessage = isStaleRefreshing(existing, now)
+  const staleRecoveryMessage = staleRefreshing
     ? ` Previous refresh from ${existing?.last_attempt_at ?? "unknown"} did not finalize and will be recovered.`
     : "";
   const staleRecoveryFinalMessage = staleRecoveryMessage.trim()
@@ -170,13 +173,14 @@ export async function refreshMarketData(
 
     const rows = priceBarsToSeriesRows(fetched.bars, SOURCE, attemptedAt);
     const rowsUpserted = await store.upsertSeries(rows);
-    const historicalRows = await store.readSeries(symbols, lookbackStart);
+    const historicalRows = await store.readSeries(uniqueStrings([...symbols, ...marketContextSeriesIds()]), lookbackStart);
     const marketContext = buildMarketContextFromSeriesRows(historicalRows, attemptedAt);
     await store.upsertMarketContext(marketContextCardsToRows(marketContext, MARKET, attemptedAt));
     const latestCoreDate = latestCommonCloseDate(historicalRows, coreSymbols());
     const holdingCoverage = holdingFreshnessCoverage(historicalRows, latestCoreDate);
-    const metricRows = buildSectorMetricRows(historicalRows, attemptedAt, {
+    const metricRows = buildSectorMetricHistoryRows(historicalRows, attemptedAt, {
       holdingCoverage,
+      historyDays: 180,
       partialHoldingRefresh: holdingCoverage.fresh < holdingCoverage.total,
       refreshPhase: plan.phase,
     });
@@ -453,6 +457,8 @@ function buildSuccessMessage({
 
 function isStaleRefreshing(existing: DataRefreshStatusRow | null | undefined, now: Date) {
   if (existing?.status !== "refreshing") return false;
+  const lastAttempt = parseTime(existing.last_attempt_at);
+  if (lastAttempt && now.getTime() - lastAttempt >= STALE_REFRESHING_AFTER_MINUTES * 60_000) return true;
   if (!existing.next_allowed_at) return true;
   const next = new Date(existing.next_allowed_at);
   return !Number.isFinite(next.getTime()) || next <= now;
@@ -648,4 +654,14 @@ function toIso(date: Date) {
 
 function toDate(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+function parseTime(value: string | null | undefined) {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values)];
 }
