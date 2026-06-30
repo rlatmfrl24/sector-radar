@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { sourceExampleSectorsResponse } from "./sampleSectors";
+import {
+  sourceExampleHistoryResponse,
+  sourceExampleSectorsResponse,
+  sourceExampleValidationResponse,
+} from "./sampleSectors";
 
 describe("source example sectors response", () => {
   it("includes active FRED example rows and excludes inactive KRX context rows", () => {
@@ -37,5 +41,36 @@ describe("source example sectors response", () => {
       status: "unvalidated",
       expose_probability: false,
     });
+  });
+
+  it("provides temporary Layer 4 validation and replay fixture data", () => {
+    const history = sourceExampleHistoryResponse("180D");
+
+    expect(sourceExampleValidationResponse).toMatchObject({
+      status: "historical_ready",
+      expose_probability: false,
+      coverage: {
+        sector_history_days: 126,
+        sector_snapshots: sourceExampleSectorsResponse.sectors.length * 126,
+      },
+      pattern_diagnostics: expect.arrayContaining([
+        expect.objectContaining({ pattern: "Strong Leader", status: "ready" }),
+      ]),
+      schedule: {
+        api: "/api/validation/status",
+        cron: "Runs after each sector-radar-ingest scheduled refresh.",
+        last_run_at: "2026-06-26T21:10:00+00:00",
+        last_run_status: "success",
+        run_type: "layer4_validation_audit",
+      },
+    });
+    expect(history.coverage).toEqual({
+      requested_days: 180,
+      available_sector_days: 126,
+      effective_days: 126,
+      limited_by_data: true,
+    });
+    expect(history.sectors).toHaveLength(sourceExampleSectorsResponse.sectors.length);
+    expect(history.sectors[0].trail).toHaveLength(126);
   });
 });

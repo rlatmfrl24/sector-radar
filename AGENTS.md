@@ -159,7 +159,7 @@ Follow this order unless the user explicitly changes scope.
 3. Maintain price and market-context ingestion adapters
 4. Maintain relative strength, RRG, breadth, and participation metrics
 5. Maintain Sector Rulebook patterns, vetoes, narratives, risks, invalidation
-6. Maintain React 3-layer dashboard: Layer 1 흐름, Layer 2 여력, Layer 3 리더십
+6. Maintain React 4-layer dashboard: Layer 1 흐름, Layer 2 여력, Layer 3 리더십, Layer 4 검증
 7. Maintain layer-scoped source freshness and validation gate
 8. Build replay and validation harness before exposing any probability-like metric
 9. Connect manual catalyst ledger after freshness and invalidation are trackable
@@ -345,7 +345,7 @@ When working as an implementation agent:
 The bootstrap phase is complete. Prefer these next issues unless the user explicitly changes scope:
 
 ```text
-1. Replay/validation harness and Verification panel upgrade
+1. Replay/validation harness and Layer 4 Verification panel upgrade
 2. Manual catalyst ledger loader and UI integration
 3. Source registry config for provider labels, cadence, warnings, and scope
 4. Official holdings/market-cap concentration source, replacing the current RS proxy where possible

@@ -6,7 +6,8 @@ const RS_WINDOW = 50;
 const MOMENTUM_WINDOW = 10;
 const BREADTH_WINDOWS = [20, 50, 200] as const;
 const PARTICIPATION_WINDOW = 20;
-const DEFAULT_METRIC_HISTORY_DAYS = 180;
+const DEFAULT_METRIC_HISTORY_DAYS = 260;
+const MAX_METRIC_HISTORY_DAYS = 360;
 
 type Field = SeriesRow["field"];
 
@@ -185,7 +186,7 @@ function metricSnapshotDates(benchmarkBars: DailyBar[], historyDays: number) {
 
 function normalizeHistoryDays(value: number) {
   if (!Number.isFinite(value)) return DEFAULT_METRIC_HISTORY_DAYS;
-  return Math.min(DEFAULT_METRIC_HISTORY_DAYS, Math.max(1, Math.floor(value)));
+  return Math.min(MAX_METRIC_HISTORY_DAYS, Math.max(1, Math.floor(value)));
 }
 
 function barsThroughDate(bars: DailyBar[], date: string) {

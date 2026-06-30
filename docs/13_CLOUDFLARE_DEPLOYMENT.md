@@ -173,12 +173,13 @@ GET /api/sectors
 GET /api/data/status
 GET /api/history
 GET /api/validation
+GET /api/validation/status
 POST /api/refresh
 ```
 
 `GET /api/sectors` reads the latest `sector_metrics_daily` rows and returns the existing Sector Snapshot contract plus `data_connection`, provider-specific `data_connections`, top-level `market_context`, and proxy leadership `concentration`.
 
-`GET /api/history` returns bounded RRG and market-context trails for UI path rendering. `GET /api/validation` returns `status = unvalidated` and `expose_probability = false` until a real walk-forward validation harness exists.
+`GET /api/history` returns bounded RRG and market-context trails for UI path rendering. `GET /api/validation` returns Layer 4 historical diagnostics from D1 while keeping `expose_probability = false`. `GET /api/validation/status` is the compact monitor endpoint for Layer 4 data health and scheduled audit status.
 
 `POST /api/refresh` is intentionally disabled on public Cloudflare Pages. It returns `refresh_unavailable_in_pages` because the Scheduled Worker owns Cloudflare refresh and enforces the upstream refresh gate.
 
@@ -189,6 +190,7 @@ Top tabs:
   흐름 / Layer 1
   여력 / Layer 2
   리더십 / Layer 3
+  검증 / Layer 4
 
 Layer 1:
   Shows market tape, breadth quality, risk/vol, flow judgement.
@@ -202,6 +204,10 @@ Layer 3:
   Shows current RS leader and momentum leader as separate concepts.
   Default selected inspector follows the Layer 1 current RS leader.
   Momentum rail remains sorted by RS Momentum so the rail leader can differ from the selected inspector.
+
+Layer 4:
+  Shows validation gate, replay availability, pattern diagnostics, scheduled audit status, and data limits only when they are real blockers.
+  Keeps probability hidden even when historical diagnostics are ready.
 ```
 
 ## 6. Scheduled Research Ingestion
@@ -237,8 +243,9 @@ The Worker:
 - fetches existing symbols incrementally and only missing symbols with full history, so one new holding does not force a full-year rewrite for every symbol
 - writes raw long-format rows to `series_daily`
 - computes RS/RRG, multi-window RRG evidence, breadth, participation, and Layer 2 context
-- upserts latest sector snapshots into `sector_metrics_daily`
+- upserts validation-length sector snapshot history into `sector_metrics_daily`
 - upserts Layer 2 context cards into `market_context_daily`
+- runs Layer 4 validation audit after each scheduled refresh and records `run_type = layer4_validation_audit`
 - updates `data_refresh_status` independently for active providers
 - records each cron lifecycle in `run_log`, including stale `refreshing` recovery and final success/failure messages
 - keeps `validation_status = unvalidated` and `expose_probability = 0`
@@ -253,6 +260,7 @@ Default ingestion vars:
   "YAHOO_FETCH_BUDGET": "38",
   "YAHOO_HOLDINGS_FETCH_BUDGET": "38",
   "YAHOO_FETCH_CONCURRENCY": "2",
+  "VALIDATION_HISTORY_DAYS": "260",
   "FRED_REFRESH_INTERVAL_MINUTES": "720",
   "ENABLE_KRX_CONTEXT_REFRESH": "false",
   "KRX_REFRESH_INTERVAL_MINUTES": "1440",

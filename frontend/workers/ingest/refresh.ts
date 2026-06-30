@@ -41,6 +41,7 @@ export interface RefreshOptions {
   enableIntradayCoreRefresh?: boolean;
   fetchBudget?: number;
   holdingFetchBudget?: number;
+  metricHistoryDays?: number;
   now?: Date;
   refreshIntervalMinutes?: number;
 }
@@ -180,7 +181,7 @@ export async function refreshMarketData(
     const holdingCoverage = holdingFreshnessCoverage(historicalRows, latestCoreDate);
     const metricRows = buildSectorMetricHistoryRows(historicalRows, attemptedAt, {
       holdingCoverage,
-      historyDays: 180,
+      historyDays: options.metricHistoryDays,
       partialHoldingRefresh: holdingCoverage.fresh < holdingCoverage.total,
       refreshPhase: plan.phase,
     });

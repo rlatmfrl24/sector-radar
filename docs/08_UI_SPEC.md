@@ -22,7 +22,7 @@
 canvas white / canvas-soft 배경
 dense app shell, no landing hero
 compact status bar and summary strip
-three dense dashboard screens: Layer 1, Layer 2, and Layer 3
+four dense dashboard screens: Layer 1, Layer 2, Layer 3, and Layer 4
 deep navy analytical panels
 thin 300-weight typography
 tabular numerics for market values
@@ -42,7 +42,7 @@ Landing page hero, marketing CTA, product promo copy, decorative background-firs
 ```text
 Dashboard Shell
   ├─ Compact Top Bar: benchmark, as_of, source, validation gate, probability gate
-  ├─ Screen Switch: 흐름 / 여력 / 리더십
+  ├─ Screen Switch: 흐름 / 여력 / 리더십 / 검증
   ├─ Layer 1: 흐름
   │   ├─ Layer 1: flow readout strip (leadership, breadth, warnings, reconciliation)
   │   └─ Layer 1: evidence panel (RRG quadrant mix, RS distribution, clusters, breadth, checkpoints)
@@ -54,16 +54,22 @@ Dashboard Shell
   │   ├─ Left Rail: momentum leader candidates
   │   ├─ Main Canvas: RRG + treemap
   │   └─ Right Inspector: selected sector narrative, module states, risks, invalidation
+  ├─ Layer 4: 검증 Lab
+  │   ├─ Progress: 데이터 수집 / Replay / 패턴 진단 / 확률 보정 단계
+  │   ├─ Validation Gate: 검증 상태, 확률 게이트, 허용 표시 범위
+  │   ├─ Replay Preview: 30D / 90D / 180D 가능 범위
+  │   ├─ Pattern Diagnostics: rulebook pattern별 historical diagnostics
+  │   └─ Audit Status: 정기 진단 갱신 상태와 실제 데이터 제한
   └─ No landing hero / no marketing CTA
 
 Dedicated sector page expansion
   └─ 보류: Layer 3 inspector에서 충분히 표현한 뒤 필요성이 검증되면 별도 화면으로 확장한다.
 
 Replay / Validation
-  ├─ Date Picker
-  ├─ Historical State
-  ├─ Forward Outcome
-  └─ Pattern Statistics
+  ├─ Layer 4 검증 Lab
+  ├─ History timeframe selector
+  ├─ Coverage readiness
+  └─ Pattern readiness
 ```
 
 ## 3. Dashboard Shell
@@ -75,7 +81,7 @@ Sector Radar
 As of: YYYY-MM-DD
 Benchmark: SPY
 Data freshness: latest close YYYY-MM-DD
-Active layer freshness: Layer 1 / Layer 2 / Layer 3 관련 수집원만 표시
+Active layer freshness: Layer 1 / Layer 2 / Layer 3 / Layer 4 관련 수집원만 표시
 ```
 
 ### 3.2 Summary Cards
@@ -148,7 +154,7 @@ Primary screen:
 
 Diagnostics:
   - 상단 수집 내역 / freshness panel
-  - freshness panel은 선택된 상단 탭의 관련 수집원만 표시한다. Layer 1은 market tape·breadth helper 시리즈, Layer 2는 participation·market context·risk trigger 원천, Layer 3는 sector snapshot/leadership 원천을 기준으로 분리한다.
+  - freshness panel은 선택된 상단 탭의 관련 수집원만 표시한다. Layer 1은 market tape·breadth helper 시리즈, Layer 2는 participation·market context·risk trigger 원천, Layer 3는 sector snapshot/leadership 원천, Layer 4는 sector snapshot·Yahoo history·FRED/context coverage를 기준으로 분리한다.
   - 개발 문서의 data-source expansion plan
 ```
 
@@ -293,6 +299,34 @@ Transition: Strengthening
 Evidence: RS Ratio 104.2, RS Momentum 101.8
 ```
 
+## 6.5 Layer 4 검증 Lab
+
+Layer 4는 Layer 1~3 판단을 더 강하게 말하는 화면이 아니라, 어떤 판단이 아직 검증 전인지 분리하는 화면입니다.
+
+```text
+Top:
+  - 현재 진행 상황: 데이터 수집, Replay, 패턴 진단, 확률 보정
+  - 검증 상태
+  - 확률 게이트
+  - history coverage
+  - context coverage
+
+Middle:
+  - 30D / 90D / 180D replay availability
+  - available/effective days
+  - 데이터 없음 / 표본 부족 / Replay 가능
+
+Bottom:
+  - pattern diagnostics table
+  - 데이터 제한이 있을 때만 제한 카드
+  - 정기 audit 갱신 상태
+```
+
+Layer 4 v1은 기존 `/api/sectors`, `/api/history`, `/api/validation`과 운영 점검용 `/api/validation/status`를 사용합니다. 새 DB migration은 요구하지 않습니다.
+`historical_ready` 상태에서는 검증이 멈춘 것처럼 보이지 않도록 `이력 진단 완료`, `Replay 가능`, `패턴 진단 완료`를 먼저 보여주고, 확률 보정은 별도 대기 단계로 분리합니다.
+
+로컬 개발이나 API 데이터가 비어 있는 환경에서는 `sourceExampleHistoryResponse`와 `sourceExampleValidationResponse` 임시 fixture를 사용해 모든 Layer 4 항목을 렌더링할 수 있어야 합니다. 이 fixture는 `Temporary Layer 4 fixture` limitation을 표시하며, 실제 검증 결과처럼 표현하지 않습니다.
+
 ## 7. Source Freshness / Data Health
 
 표시 항목:
@@ -316,12 +350,12 @@ stale/live/manual_check status
 React + Vite 우선:
 
 ```text
-frontend/src/App.tsx: three-layer screen switch, Layer 1 흐름, Layer 2 여력, Layer 3 리더십
+frontend/src/App.tsx: four-layer screen switch, Layer 1 흐름, Layer 2 여력, Layer 3 리더십, Layer 4 검증
 frontend/functions/api/sectors.ts: D1-backed sector snapshots
 frontend/wrangler.jsonc: Cloudflare Pages + D1 binding
 ```
 
-Replay / Validation은 같은 JSON contract 위에 별도 view로 확장합니다.
+Replay / Validation은 같은 JSON contract 위에 Layer 4 view로 확장합니다.
 
 `DESIGN.md` 반영 원칙:
 

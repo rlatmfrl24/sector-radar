@@ -279,8 +279,12 @@ export interface HistoryResponse {
 
 export type HistoryTimeframe = "30D" | "90D" | "180D";
 
+export type ValidationStatus = "historical_ready" | "insufficient_history" | "unvalidated";
+export type ValidationReplayStatus = "collecting" | "limited" | "ready";
+export type ValidationPatternStatus = "collecting" | "ready" | "thin_sample";
+
 export interface ValidationResponse {
-  status: "unvalidated";
+  status: ValidationStatus;
   expose_probability: false;
   scorecard: {
     sector_rrg_ic: number | null;
@@ -292,6 +296,33 @@ export interface ValidationResponse {
     sector_history_days: number;
     market_context_points: number;
     market_context_days: number;
+  };
+  replay_windows?: Array<{
+    timeframe: HistoryTimeframe;
+    requested_days: number;
+    available_sector_days: number;
+    effective_days: number;
+    limited_by_data: boolean;
+    status: ValidationReplayStatus;
+  }>;
+  pattern_diagnostics?: Array<{
+    pattern: string;
+    sample_size: number;
+    evaluated_20d: number;
+    evaluated_60d: number;
+    fwd_rel_20d_median: number | null;
+    fwd_rel_60d_median: number | null;
+    max_drawdown_20d_median: number | null;
+    leading_after_20d_count: number;
+    status: ValidationPatternStatus;
+    next_step: string;
+  }>;
+  schedule?: {
+    api: string;
+    cron: string;
+    last_run_at: string | null;
+    last_run_status: string | null;
+    run_type: string;
   };
   limitations: string[];
 }

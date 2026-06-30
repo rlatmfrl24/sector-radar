@@ -1,10 +1,13 @@
 import type {
   DataConnections,
+  HistoryResponse,
+  HistoryTimeframe,
   MarketContextCard,
   SectorSnapshot,
   SectorsResponse,
   SourceExpansionItem,
   SourceFreshnessItem,
+  ValidationResponse,
 } from "../types";
 
 const sectorRows: SectorSnapshot[] = [
@@ -619,6 +622,207 @@ export const sourceExampleSectorsResponse: SectorsResponse = {
     warnings: ["example_probe_data_not_for_decision", "concentration_is_supplemental_estimate"],
   },
 };
+
+export const sourceExampleValidationResponse: ValidationResponse = {
+  status: "historical_ready",
+  expose_probability: false,
+  scorecard: {
+    sector_rrg_ic: null,
+    pattern_hit_rate: null,
+    sample_size: sectorRows.length * 66,
+  },
+  coverage: {
+    sector_snapshots: sectorRows.length * 126,
+    sector_history_days: 126,
+    market_context_points: sourceExampleMarketContext.length * 126,
+    market_context_days: 126,
+  },
+  replay_windows: [
+    {
+      timeframe: "30D",
+      requested_days: 30,
+      available_sector_days: 126,
+      effective_days: 30,
+      limited_by_data: false,
+      status: "ready",
+    },
+    {
+      timeframe: "90D",
+      requested_days: 90,
+      available_sector_days: 126,
+      effective_days: 90,
+      limited_by_data: false,
+      status: "ready",
+    },
+    {
+      timeframe: "180D",
+      requested_days: 180,
+      available_sector_days: 126,
+      effective_days: 126,
+      limited_by_data: true,
+      status: "limited",
+    },
+  ],
+  pattern_diagnostics: [
+    {
+      pattern: "Strong Leader",
+      sample_size: 126,
+      evaluated_20d: 106,
+      evaluated_60d: 66,
+      fwd_rel_20d_median: 1.4,
+      fwd_rel_60d_median: 2.2,
+      max_drawdown_20d_median: -2.8,
+      leading_after_20d_count: 74,
+      status: "ready",
+      next_step: "Monitor with scheduled audit",
+    },
+    {
+      pattern: "Emerging Leader",
+      sample_size: 126,
+      evaluated_20d: 106,
+      evaluated_60d: 66,
+      fwd_rel_20d_median: 0.8,
+      fwd_rel_60d_median: 1.7,
+      max_drawdown_20d_median: -3.1,
+      leading_after_20d_count: 42,
+      status: "ready",
+      next_step: "Monitor with scheduled audit",
+    },
+    {
+      pattern: "Late Leader",
+      sample_size: 126,
+      evaluated_20d: 106,
+      evaluated_60d: 66,
+      fwd_rel_20d_median: -0.3,
+      fwd_rel_60d_median: -0.9,
+      max_drawdown_20d_median: -4.2,
+      leading_after_20d_count: 22,
+      status: "ready",
+      next_step: "Monitor with scheduled audit",
+    },
+    {
+      pattern: "False Leadership",
+      sample_size: 64,
+      evaluated_20d: 44,
+      evaluated_60d: 4,
+      fwd_rel_20d_median: -0.7,
+      fwd_rel_60d_median: null,
+      max_drawdown_20d_median: -4.8,
+      leading_after_20d_count: 8,
+      status: "ready",
+      next_step: "Monitor with scheduled audit",
+    },
+  ],
+  schedule: {
+    api: "/api/validation/status",
+    cron: "Runs after each sector-radar-ingest scheduled refresh.",
+    last_run_at: "2026-06-26T21:10:00+00:00",
+    last_run_status: "success",
+    run_type: "layer4_validation_audit",
+  },
+  limitations: [
+    "Temporary Layer 4 fixture is displayed when validation data is unavailable.",
+    "Fixture diagnostics are synthetic and must not be read as live historical diagnostics.",
+  ],
+};
+
+export function sourceExampleHistoryResponse(
+  timeframe: HistoryTimeframe = "90D",
+  status: HistoryResponse["status"] = "ok",
+  message = "Temporary Layer 4 fixture history for replay readiness.",
+): HistoryResponse {
+  const requestedDays = historyTimeframeDays(timeframe);
+  const availableSectorDays = sourceExampleValidationResponse.coverage.sector_history_days;
+  const effectiveDays = Math.min(requestedDays, availableSectorDays);
+
+  return {
+    market: "US",
+    timeframe,
+    coverage: {
+      requested_days: requestedDays,
+      available_sector_days: availableSectorDays,
+      effective_days: effectiveDays,
+      limited_by_data: effectiveDays < requestedDays,
+    },
+    sectors: sectorRows.map((sector, sectorIndex) => ({
+      sector_code: sector.sector_code,
+      trail: sampleSectorTrail(sector, effectiveDays, sectorIndex),
+    })),
+    market_context: sourceExampleMarketContext.map((card, contextIndex) => ({
+      code: card.code,
+      points: sampleContextTrail(card, Math.min(effectiveDays, 60), contextIndex),
+    })),
+    status,
+    message,
+  };
+}
+
+function sampleSectorTrail(sector: SectorSnapshot, days: number, sectorIndex: number) {
+  const latestRatio = numericEvidence(sector.modules.relative_strength.evidence.rs_ratio, 100);
+  const latestMomentum = numericEvidence(sector.modules.relative_strength.evidence.rs_momentum, 100);
+  const strength = sector.rulebook.strength;
+  const slope = sector.quadrant === "improving" || sector.quadrant === "leading" ? 1 : -1;
+
+  return Array.from({ length: days }, (_, index) => {
+    const distance = days - index - 1;
+    const wave = Math.sin((index + sectorIndex) / 6) * 0.45;
+    const ratio = latestRatio - slope * (distance / Math.max(1, days)) * 2.2 + wave;
+    const momentum = latestMomentum - slope * (distance / Math.max(1, days)) * 1.7 - wave / 2;
+
+    return {
+      date: sampleDate(distance),
+      rs_ratio: roundOne(ratio),
+      rs_momentum: roundOne(momentum),
+      quadrant: quadrantFromMetrics(ratio, momentum),
+      strength,
+    };
+  });
+}
+
+function sampleContextTrail(card: MarketContextCard, days: number, contextIndex: number) {
+  return Array.from({ length: days }, (_, index) => {
+    const distance = days - index - 1;
+    return {
+      date: sampleDate(distance),
+      state: index % 17 === contextIndex ? "watch" : card.state,
+      transition: index % 19 === contextIndex ? "weakening" : card.transition,
+      source_class: card.source_class,
+      data_freshness: {
+        latest_date: sampleDate(distance),
+        provider: card.data_freshness.provider ?? "fred",
+        source_class: card.source_class,
+      },
+    };
+  });
+}
+
+function sampleDate(daysAgo: number) {
+  const date = new Date("2026-06-26T00:00:00.000Z");
+  date.setUTCDate(date.getUTCDate() - daysAgo);
+  return date.toISOString().slice(0, 10);
+}
+
+function numericEvidence(value: number | string | null | undefined, fallback: number) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function quadrantFromMetrics(rsRatio: number, rsMomentum: number) {
+  if (rsRatio >= 100 && rsMomentum >= 100) return "leading";
+  if (rsRatio < 100 && rsMomentum >= 100) return "improving";
+  if (rsRatio >= 100 && rsMomentum < 100) return "weakening";
+  return "lagging";
+}
+
+function roundOne(value: number) {
+  return Math.round(value * 10) / 10;
+}
+
+function historyTimeframeDays(timeframe: HistoryTimeframe) {
+  if (timeframe === "30D") return 30;
+  if (timeframe === "180D") return 180;
+  return 90;
+}
 
 function sourceExpansionFixture(yahooLatest: string, fredLatest: string): SourceExpansionItem[] {
   return [

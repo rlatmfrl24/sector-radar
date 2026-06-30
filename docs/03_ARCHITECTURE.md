@@ -204,7 +204,7 @@ frontend/src/features/radar/model.ts
   정렬, 그룹핑, 패턴 클래스, 숫자 포맷 등 순수 helper
 
 frontend/src/features/radar/components/
-  대시보드 top bar, Layer 1, Layer 2, Layer 3 화면 컴포넌트와 공통 패널 부품
+  대시보드 top bar, Layer 1, Layer 2, Layer 3, Layer 4 화면 컴포넌트와 공통 패널 부품
 
 frontend/src/types.ts
   docs/09_API_CONTRACT.md와 맞춰야 하는 JSON 타입
@@ -224,18 +224,24 @@ Layer 3:
   기본 상세 선택은 Layer 1의 현재 RS 리더를 따른다.
   좌측 레일은 sortSectorsByMomentum = rs_momentum desc, rs_ratio desc를 사용한다.
   현재 RS 리더와 모멘텀 선두가 다르면 전환 관찰 신호로 표시한다.
+
+Layer 4:
+  /api/validation diagnostics와 /api/history coverage로 검증 게이트, replay 준비도, pattern diagnostics를 읽는다.
+  /api/validation/status와 run_log의 layer4_validation_audit으로 정기 점검 상태를 읽는다.
+  calibration 전까지 확률, 승률, 기대수익률 문구는 표시하지 않는다.
 ```
 
 수집원 표시 규칙:
 
 ```text
 FreshnessBar:
-  activeView에 따라 source_freshness를 Layer 1/2/3로 scope한다.
+  activeView에 따라 source_freshness를 Layer 1/2/3/4로 scope한다.
 
 ContextRail:
   Layer 1은 market tape/breadth/risk/validation,
   Layer 2는 market context/participation/risk trigger/validation,
-  Layer 3는 RS 리더/순환 후보/reconciliation/validation을 표시한다.
+  Layer 3는 RS 리더/순환 후보/reconciliation/validation,
+  Layer 4는 검증/Replay/Coverage/확률 게이트를 표시한다.
 ```
 
 ## 9. 환경 설정

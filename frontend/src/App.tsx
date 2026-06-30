@@ -4,6 +4,7 @@ import {
   ContextRail,
   DashboardTopBar,
   FreshnessBar,
+  LayerFourValidationLab,
   LayerOneFlowView,
   LayerThreeLeadership,
   LayerTwoLiquidityView,
@@ -147,10 +148,11 @@ function App() {
         onExplainModeChange={handleExplainModeChange}
         onRefresh={handleRefresh}
         onViewChange={setActiveView}
+        validation={validation}
       />
       <section className="view-workspace" aria-label="sector radar workspace">
         <FreshnessBar activeView={activeView} data={data} />
-        <ContextRail activeView={activeView} data={data} />
+        <ContextRail activeView={activeView} data={data} validation={validation} />
         {activeView === "layer1" ? (
           <LayerOneFlowView
             explainMode={explainMode}
@@ -170,7 +172,7 @@ function App() {
             selected={selected}
             watchlist={data.watchlist ?? []}
           />
-        ) : (
+        ) : activeView === "leadership" ? (
           <LayerThreeLeadership
             currentLeader={rankedSectors[0]}
             onSelect={setSelectedCode}
@@ -183,6 +185,14 @@ function App() {
             onHistoryTimeframeChange={handleHistoryTimeframeChange}
             validation={validation}
             warnings={warnings}
+          />
+        ) : (
+          <LayerFourValidationLab
+            data={data}
+            history={history}
+            historyTimeframe={historyTimeframe}
+            onHistoryTimeframeChange={handleHistoryTimeframeChange}
+            validation={validation}
           />
         )}
       </section>

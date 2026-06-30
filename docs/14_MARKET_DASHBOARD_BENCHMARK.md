@@ -70,7 +70,7 @@ Current UI:
 ```text
 Top freshness chip -> opens SourceFreshnessPanel
 ContextRail -> compact layer-specific status row
-FreshnessBar -> scopes rows by active Layer 1/2/3 tab
+FreshnessBar -> scopes rows by active Layer 1/2/3/4 tab
 ```
 
 Proposed fields:
@@ -159,10 +159,13 @@ Current UI:
 
 ```text
 ContextRail:
-Layer 1/2/3 scoped status segments
+Layer 1/2/3/4 scoped status segments
 
 Layer 1:
 Flow judgement and reconciliation copy
+
+Layer 4:
+Validation gate, replay readiness, coverage, and probability gate
 
 Alignment: supportive / divergent / risk rising / data insufficient
 ```

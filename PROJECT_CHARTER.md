@@ -31,12 +31,13 @@ Sector Radar는 다음 성격의 제품입니다.
 | Local-first + Deployable | 로컬 SQLite 연구 엔진과 Cloudflare Pages/D1 대시보드를 함께 유지 |
 | Modular System | Macro·Stock·Strategy로 확장 가능 |
 
-현재 대시보드는 세 화면으로 구성됩니다.
+현재 대시보드는 네 화면으로 구성됩니다.
 
 ```text
 Layer 1 흐름: 시장 tape, breadth quality, volatility pressure, 현재 RS 리더
 Layer 2 여력: ETF participation, FRED market context, risk trigger
 Layer 3 리더십: 현재 RS 리더 상세, 모멘텀 선두 후보, RRG/path/treemap
+Layer 4 검증: 검증 게이트, replay 준비도, pattern readiness
 ```
 
 현재 RS 리더와 모멘텀 선두가 다를 수 있으며, 이 불일치는 오류가 아니라 리더십 전환 관찰 신호입니다.

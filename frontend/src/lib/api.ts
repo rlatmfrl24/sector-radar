@@ -1,4 +1,9 @@
-import { sampleSectorsResponse, sourceExampleSectorsResponse } from "../data/sampleSectors";
+import {
+  sampleSectorsResponse,
+  sourceExampleHistoryResponse,
+  sourceExampleSectorsResponse,
+  sourceExampleValidationResponse,
+} from "../data/sampleSectors";
 import type {
   DataConnection,
   HistoryResponse,
@@ -70,59 +75,64 @@ export async function loadDataStatus(): Promise<DataConnection> {
 }
 
 export async function loadHistory(timeframe: HistoryTimeframe = "90D"): Promise<HistoryResponse> {
+  if (useSourceExamples()) {
+    return sourceExampleHistoryResponse(timeframe);
+  }
+
   try {
     const response = await fetch(`/api/history?timeframe=${encodeURIComponent(timeframe)}`, {
       headers: { accept: "application/json" },
     });
     if (!response.ok) throw new Error(`History returned ${response.status}`);
-    return (await response.json()) as HistoryResponse;
+    const data = (await response.json()) as HistoryResponse;
+    if (!hasHistoryCoverage(data)) {
+      return sourceExampleHistoryResponse(
+        timeframe,
+        "degraded",
+        "History API returned no rows; temporary Layer 4 fixture is displayed.",
+      );
+    }
+    return data;
   } catch {
-    return {
-      market: "US",
+    return sourceExampleHistoryResponse(
       timeframe,
-      coverage: {
-        requested_days: timeframeDays(timeframe),
-        available_sector_days: 0,
-        effective_days: 0,
-        limited_by_data: true,
-      },
-      sectors: [],
-      market_context: [],
-      status: "degraded",
-      message: "History API unavailable.",
-    };
+      "degraded",
+      "History API unavailable; temporary Layer 4 fixture is displayed.",
+    );
   }
 }
 
-function timeframeDays(timeframe: HistoryTimeframe) {
-  if (timeframe === "30D") return 30;
-  if (timeframe === "180D") return 180;
-  return 90;
+function hasHistoryCoverage(data: HistoryResponse) {
+  const coverageDays = data.coverage?.available_sector_days ?? 0;
+  const trailPoints = data.sectors.reduce((count, sector) => count + sector.trail.length, 0);
+  return coverageDays > 0 || trailPoints > 0;
 }
 
 export async function loadValidation(): Promise<ValidationResponse> {
+  if (useSourceExamples()) {
+    return sourceExampleValidationResponse;
+  }
+
   try {
     const response = await fetch("/api/validation", {
       headers: { accept: "application/json" },
     });
     if (!response.ok) throw new Error(`Validation returned ${response.status}`);
-    return (await response.json()) as ValidationResponse;
+    const data = (await response.json()) as ValidationResponse;
+    if (!hasValidationCoverage(data)) {
+      return sourceExampleValidationResponse;
+    }
+    return data;
   } catch {
-    return {
-      status: "unvalidated",
-      expose_probability: false,
-      scorecard: {
-        sector_rrg_ic: null,
-        pattern_hit_rate: null,
-        sample_size: 0,
-      },
-      coverage: {
-        sector_snapshots: 0,
-        sector_history_days: 0,
-        market_context_points: 0,
-        market_context_days: 0,
-      },
-      limitations: ["Validation API unavailable; probability remains hidden."],
-    };
+    return sourceExampleValidationResponse;
   }
+}
+
+function hasValidationCoverage(data: ValidationResponse) {
+  return (
+    data.coverage.sector_snapshots > 0 ||
+    data.coverage.sector_history_days > 0 ||
+    data.coverage.market_context_points > 0 ||
+    data.coverage.market_context_days > 0
+  );
 }

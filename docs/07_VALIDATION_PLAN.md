@@ -131,6 +131,52 @@ as_of date 선택
 Rulebook 판단과 실제 결과 비교
 ```
 
+### 8.1 Layer 4 검증 Lab v1
+
+현재 대시보드는 Layer 4를 검증 Lab으로 둡니다. v1은 D1에 적재된 `sector_metrics_daily`와 `series_daily` 이력을 사용해 pattern별 historical diagnostics를 계산합니다. Calibration은 아직 구현하지 않으므로 확률은 계속 숨깁니다.
+
+```text
+사용 데이터:
+  /api/sectors
+  /api/history
+  /api/validation
+  /api/validation/status
+
+표시:
+  validation status
+  expose_probability=false
+  sector snapshot coverage
+  sector history days
+  market context coverage
+  30D / 90D / 180D replay readiness
+  rulebook pattern diagnostics
+  20D / 60D forward relative median
+  20D drawdown median
+  scheduled audit status
+  limitations only when data is unavailable or insufficient
+```
+
+상태 기준:
+
+```text
+sector_history_days == 0  -> 데이터 없음
+sector_history_days < 60  -> 표본 부족
+sector_history_days >= 60 and forward labels > 0 -> historical_ready
+validation.status == historical_ready -> pattern diagnostics 표시
+validation.expose_probability == false -> 확률 숨김
+```
+
+Layer 4는 historical diagnostics를 분리하는 화면입니다. `historical_ready` 상태에서는 이력 진단을 완료 상태로 표시하고, 확률성 문구는 별도 calibration 단계 전까지 `expose_probability = false` 게이트로만 관리합니다.
+
+정기 작업:
+
+```text
+Worker: sector-radar-ingest
+Run log: run_type = layer4_validation_audit
+API: GET /api/validation/status
+Schedule: 기존 ingest cron 이후 audit 실행
+```
+
 ## 9. 검증 리포트 예시
 
 ```text

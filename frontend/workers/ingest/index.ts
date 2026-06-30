@@ -1,3 +1,7 @@
+import {
+  buildLayerFourValidationReport,
+  LAYER4_VALIDATION_RUN_TYPE,
+} from "../../functions/_shared/validationReport";
 import { refreshFredMarketContext, refreshKrxMarketContext } from "./contextRefresh";
 import { FredProvider } from "./fredProvider";
 import { KrxOpenApiProvider } from "./krxProvider";
@@ -52,6 +56,7 @@ async function runRefresh(env: Env, now: Date): Promise<void> {
     coreFetchBudget: parseNumber(env.YAHOO_CORE_FETCH_BUDGET, legacyBudget),
     enableIntradayCoreRefresh: parseBoolean(env.ENABLE_INTRADAY_CORE_REFRESH),
     holdingFetchBudget: parseNumber(env.YAHOO_HOLDINGS_FETCH_BUDGET, legacyBudget),
+    metricHistoryDays: parseNumber(readOptionalEnv(env, "VALIDATION_HISTORY_DAYS"), 260),
     now,
     refreshIntervalMinutes: interval,
   });
@@ -79,6 +84,7 @@ async function runRefresh(env: Env, now: Date): Promise<void> {
         },
       )
     : "disabled";
+  const validationAudit = await runLayerFourValidationAudit(store, env, now);
 
   console.log(
     JSON.stringify({
@@ -87,9 +93,48 @@ async function runRefresh(env: Env, now: Date): Promise<void> {
         yahoo_finance: yahooOutcome.status,
         fred: fredOutcome,
         krx_openapi: krxOutcome,
+        layer4_validation: validationAudit.status,
       },
     }),
   );
+}
+
+async function runLayerFourValidationAudit(store: D1RefreshStore, env: Env, now: Date) {
+  const startedAt = toIso(now);
+  const runId = `${LAYER4_VALIDATION_RUN_TYPE}:${startedAt}`;
+
+  try {
+    const report = await buildLayerFourValidationReport(env.DB);
+    const readyPatterns = report.pattern_diagnostics.filter((item) => item.status === "ready").length;
+    const status = report.status === "historical_ready" ? "success" : "insufficient_data";
+    const message = [
+      `Layer 4 validation audit ${report.status}.`,
+      `history_days=${report.coverage.sector_history_days}.`,
+      `evaluated_samples=${report.scorecard.sample_size}.`,
+      `ready_patterns=${readyPatterns}/${report.pattern_diagnostics.length}.`,
+    ].join(" ");
+
+    await store.upsertRunLog({
+      run_id: runId,
+      run_type: LAYER4_VALIDATION_RUN_TYPE,
+      started_at: startedAt,
+      finished_at: toIso(new Date()),
+      status,
+      message,
+    });
+    return { status };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Layer 4 validation audit failed.";
+    await store.upsertRunLog({
+      run_id: runId,
+      run_type: LAYER4_VALIDATION_RUN_TYPE,
+      started_at: startedAt,
+      finished_at: toIso(new Date()),
+      status: "failed",
+      message,
+    });
+    return { status: "failed" };
+  }
 }
 
 function activeStatusProviders(env: Env): string[] {

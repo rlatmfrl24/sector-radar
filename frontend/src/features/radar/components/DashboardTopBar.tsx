@@ -1,6 +1,6 @@
 import { BookOpen, Info, RefreshCw } from "lucide-react";
 
-import type { SectorsResponse } from "../../../types";
+import type { SectorsResponse, ValidationResponse } from "../../../types";
 import type { RadarView } from "../model";
 
 type StatusTone = "default" | "guard" | "risk";
@@ -20,6 +20,7 @@ export function DashboardTopBar({
   onExplainModeChange,
   onRefresh,
   onViewChange,
+  validation,
 }: {
   activeView: RadarView;
   data: SectorsResponse;
@@ -28,11 +29,12 @@ export function DashboardTopBar({
   onExplainModeChange: (enabled: boolean) => void;
   onRefresh: () => void;
   onViewChange: (view: RadarView) => void;
+  validation?: ValidationResponse | null;
 }) {
   const connection = data.data_connection;
   const refreshDisabled =
     isRefreshing || !connection.manual_refresh_available || data.source === "sample";
-  const statusItems = buildStatusItems(data);
+  const statusItems = buildStatusItems(data, validation);
   const refreshTooltip = refreshDisabled
     ? `수동 갱신을 사용할 수 없습니다. 현재 모드: ${modeLabel(connection.mode)}, 상태: ${statusLabel(connection.status)}.`
     : `Yahoo Finance 데이터 수동 갱신을 요청합니다. 서버의 ${connection.refresh_interval_minutes}분 갱신 제한은 우회하지 않습니다. 다음 갱신 가능 시각: ${formatFullDateTime(connection.next_allowed_at)}.`;
@@ -112,6 +114,7 @@ function ViewSwitch({
     { detail: "Layer 1", id: "layer1", label: "흐름" },
     { detail: "Layer 2", id: "layer2", label: "여력" },
     { detail: "Layer 3", id: "leadership", label: "리더십" },
+    { detail: "Layer 4", id: "validation", label: "검증" },
   ];
 
   return (
@@ -191,7 +194,7 @@ function statusTone(status: string): StatusTone {
   return "default";
 }
 
-function buildStatusItems(data: SectorsResponse): HeaderStatusItem[] {
+function buildStatusItems(data: SectorsResponse, validation?: ValidationResponse | null): HeaderStatusItem[] {
   const connection = data.data_connection;
   const provider = providerLabel(connection.provider);
   const mode = modeLabel(connection.mode);
@@ -224,8 +227,8 @@ function buildStatusItems(data: SectorsResponse): HeaderStatusItem[] {
     {
       label: "검증",
       tone: "guard",
-      tooltip: `현재 검증 상태: ${validationStatusLabel(data.validation.status)}. 확률 노출: ${data.validation.expose_probability ? "켜짐" : "숨김"}. Walk-forward 검증 전에는 승률, 상승 확률, 기대수익률을 판단 문구에 쓰지 않습니다.`,
-      value: data.validation.expose_probability ? "확률 표시" : "검증 전",
+      tooltip: `현재 검증 상태: ${validationStatusLabel(validation?.status ?? data.validation.status)}. 확률 노출: ${(validation?.expose_probability ?? data.validation.expose_probability) ? "켜짐" : "숨김"}. 확률성 판단 문구는 calibration 단계 전까지 분리합니다.`,
+      value: validationPillValue(validation, data.validation.expose_probability),
     },
   ];
 }
@@ -279,6 +282,15 @@ function statusLabel(status: string) {
 }
 
 function validationStatusLabel(status: string) {
+  if (status === "historical_ready") return "이력 진단 완료";
+  if (status === "insufficient_history") return "표본 부족";
   if (status === "unvalidated") return "검증 전";
   return status;
+}
+
+function validationPillValue(validation: ValidationResponse | null | undefined, fallbackExposeProbability: boolean) {
+  if (validation?.status === "historical_ready") return "이력 진단 완료";
+  if (validation?.status === "insufficient_history") return "표본 부족";
+  if (validation?.status === "unvalidated") return "검증 전";
+  return fallbackExposeProbability ? "확률 표시" : "검증 전";
 }

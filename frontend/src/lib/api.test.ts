@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { sourceExampleSectorsResponse } from "../data/sampleSectors";
-import { loadHistory, normalizeSectorsResponse } from "./api";
+import { loadHistory, loadValidation, normalizeSectorsResponse } from "./api";
 import { normalizeSectorName } from "./sectorNames";
 
 describe("API fallback responses", () => {
@@ -9,7 +9,7 @@ describe("API fallback responses", () => {
     vi.unstubAllGlobals();
   });
 
-  it("returns explicit history coverage when the history API is unavailable", async () => {
+  it("returns temporary Layer 4 history coverage when the history API is unavailable", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockRejectedValue(new Error("offline")),
@@ -20,10 +20,32 @@ describe("API fallback responses", () => {
       status: "degraded",
       coverage: {
         requested_days: 180,
-        available_sector_days: 0,
-        effective_days: 0,
+        available_sector_days: 126,
+        effective_days: 126,
         limited_by_data: true,
       },
+    });
+  });
+
+  it("returns temporary Layer 4 validation coverage when the validation API is unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("offline")),
+    );
+
+    await expect(loadValidation()).resolves.toMatchObject({
+      status: "historical_ready",
+      expose_probability: false,
+      coverage: {
+        sector_history_days: 126,
+        sector_snapshots: 1512,
+      },
+      pattern_diagnostics: expect.arrayContaining([
+        expect.objectContaining({ pattern: "Strong Leader", status: "ready" }),
+      ]),
+      limitations: expect.arrayContaining([
+        "Temporary Layer 4 fixture is displayed when validation data is unavailable.",
+      ]),
     });
   });
 

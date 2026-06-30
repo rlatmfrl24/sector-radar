@@ -23,10 +23,11 @@ Update the React dashboard.
 
 Read DESIGN.md, docs/08_UI_SPEC.md, docs/09_API_CONTRACT.md, and skills/skill_dashboard_engineer.md.
 
-Maintain the current 3-layer structure:
+Maintain the current 4-layer structure:
 - Layer 1 흐름
 - Layer 2 여력
 - Layer 3 리더십
+- Layer 4 검증
 
 Requirements:
 - Do not compute metrics inside UI.
@@ -34,6 +35,7 @@ Requirements:
 - Layer 3 default inspector follows the current RS leader.
 - Momentum rail is sorted by rs_momentum desc, rs_ratio desc.
 - Do not call both current RS leader and momentum leader "주도섹터".
+- Layer 4 uses validation/history coverage for readiness only, not probability-like claims.
 - Show narrative, risks, invalidation, data freshness, and validation status.
 - Run npm run test:app and npm run build.
 ```

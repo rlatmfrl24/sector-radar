@@ -8,6 +8,7 @@ import type {
   SectorsResponse,
   SourceFreshnessItem,
   SourceFreshnessProvider,
+  ValidationResponse,
 } from "../../../types";
 import type { RadarView } from "../model";
 
@@ -77,13 +78,15 @@ export function FreshnessBar({
 export function ContextRail({
   activeView = "layer1",
   data,
+  validation,
 }: {
   activeView?: RadarView;
   data: SectorsResponse;
+  validation?: ValidationResponse | null;
 }) {
   const activeContext = (data.market_context ?? []).filter((card) => card.source_class !== "held" && card.source_class !== "manual");
   const officialCount = activeContext.filter((card) => card.source_class === "official").length;
-  const rail = contextRailItems(data, activeView, activeContext.length, officialCount);
+  const rail = contextRailItems(data, activeView, activeContext.length, officialCount, validation);
 
   return (
     <section className="context-rail" aria-label="analysis flow">
@@ -306,6 +309,14 @@ function sourceFreshnessMatchesView(item: SourceFreshnessItem, activeView: Radar
       item.id === "snapshot:sector_metrics"
     );
   }
+  if (activeView === "validation") {
+    return (
+      item.id === "snapshot:sector_metrics" ||
+      item.id === "provider:yahoo_finance" ||
+      item.id === "provider:fred" ||
+      item.id.startsWith("context:")
+    );
+  }
   return item.provider === "yahoo_finance" && (item.id.startsWith("provider:") || item.id.startsWith("snapshot:"));
 }
 
@@ -337,6 +348,7 @@ function mergeFreshness(base: SourceFreshnessItem[], extra: SourceFreshnessItem[
 }
 
 function fallbackProvidersForView(activeView: RadarView) {
+  if (activeView === "validation") return new Set<SourceFreshnessProvider>(["yahoo_finance", "fred"]);
   if (activeView === "layer2") return new Set<SourceFreshnessProvider>(["yahoo_finance", "fred", "krx_openapi"]);
   return new Set<SourceFreshnessProvider>(["yahoo_finance"]);
 }
@@ -344,6 +356,7 @@ function fallbackProvidersForView(activeView: RadarView) {
 function freshnessScopeLabel(activeView: RadarView) {
   if (activeView === "layer1") return "Layer 1";
   if (activeView === "layer2") return "Layer 2";
+  if (activeView === "validation") return "Layer 4";
   return "Layer 3";
 }
 
@@ -352,10 +365,11 @@ function contextRailItems(
   activeView: RadarView,
   activeContextCount: number,
   officialCount: number,
+  validation?: ValidationResponse | null,
 ) {
   const concentration = data.concentration;
   const reconciliation = data.context_reconciliation;
-  const validationValue = data.validation.expose_probability ? "확률 표시" : "검증 전";
+  const validationValue = validationRailValue(validation, data.validation.expose_probability);
 
   if (activeView === "layer1") {
     const flow = data.layer1_flow;
@@ -393,6 +407,36 @@ function contextRailItems(
     };
   }
 
+  if (activeView === "validation") {
+    const contextDays = validation?.coverage.market_context_days ?? Math.max(0, activeContextCount);
+    const replayReady = validation?.replay_windows?.filter((window) => window.status === "ready").length ?? 0;
+    const replayTotal = validation?.replay_windows?.length ?? 0;
+    const patternReady = validation?.pattern_diagnostics?.filter((item) => item.status === "ready").length ?? 0;
+    const patternTotal = validation?.pattern_diagnostics?.length ?? 0;
+    return {
+      items: [
+        { icon: "shield" as const, label: "검증", value: validationValue },
+        {
+          icon: "activity" as const,
+          label: "Replay",
+          value: replayTotal > 0 ? `${replayReady}/${replayTotal} 가능` : "history 확인",
+        },
+        {
+          icon: "database" as const,
+          label: "패턴 진단",
+          value: patternTotal > 0 ? `${patternReady}/${patternTotal} 완료` : `${data.sectors.length} sectors`,
+        },
+        { icon: "shield" as const, label: "확률 게이트", value: validation?.expose_probability ? "표시" : "숨김" },
+      ],
+      narrative:
+        validation?.status === "historical_ready"
+          ? `Layer 4는 ${validation.coverage.sector_history_days}일 이력으로 패턴 진단을 표시 중입니다. 확률 보정은 별도 단계입니다.`
+          : contextDays > 0
+            ? "Layer 4는 sector snapshot, history, market context coverage를 분리해 확인합니다."
+            : "Layer 4는 검증 입력과 replay 가능 범위를 분리해 확인합니다.",
+    };
+  }
+
   return {
     items: [
       { icon: "database" as const, label: "RS 리더", value: `${concentration?.top1 ?? data.sectors[0]?.sector_code ?? "N/A"} lead` },
@@ -409,6 +453,13 @@ function contextRailItems(
         ? `effective sectors ${concentration.effective_sector_count.toFixed(1)} · RS 기반 집중도 보조 추정`
         : "concentration pending",
   };
+}
+
+function validationRailValue(validation: ValidationResponse | null | undefined, fallbackExposeProbability: boolean) {
+  if (validation?.status === "historical_ready") return "이력 진단 완료";
+  if (validation?.status === "insufficient_history") return "표본 부족";
+  if (validation?.status === "unvalidated") return "검증 전";
+  return fallbackExposeProbability ? "확률 표시" : "검증 전";
 }
 
 function providerLabel(provider: string) {

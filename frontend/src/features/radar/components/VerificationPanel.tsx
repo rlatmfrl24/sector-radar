@@ -11,7 +11,7 @@ export function VerificationPanel({ validation }: { validation: ValidationRespon
         <span>검증 상태</span>
         <strong>{validationStatusLabel(validation?.status)}</strong>
       </div>
-      <p>Walk-forward 검증 전에는 확률, 승률, 기대수익률을 판단 문구에 쓰지 않습니다.</p>
+      <p>이력 진단 결과와 확률 보정 단계는 분리해 표시합니다. 현재 화면의 판단 문구는 규칙과 패턴 근거만 사용합니다.</p>
       <dl>
         <div>
           <dt>sector samples</dt>
@@ -28,5 +28,7 @@ export function VerificationPanel({ validation }: { validation: ValidationRespon
 
 function validationStatusLabel(status?: string) {
   if (!status || status === "unvalidated") return "검증 전";
+  if (status === "historical_ready") return "이력 진단 완료";
+  if (status === "insufficient_history") return "표본 부족";
   return status;
 }

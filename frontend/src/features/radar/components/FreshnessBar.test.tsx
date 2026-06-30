@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { sourceExampleSectorsResponse } from "../../../data/sampleSectors";
+import { sourceExampleSectorsResponse, sourceExampleValidationResponse } from "../../../data/sampleSectors";
 import { ContextRail, FreshnessBar } from "./FreshnessBar";
 
 describe("FreshnessBar scoped source display", () => {
@@ -42,5 +42,34 @@ describe("FreshnessBar scoped source display", () => {
     expect(html).toContain("RS 리더");
     expect(html).toContain("순환 후보");
     expect(html).not.toContain("Sector Leadership");
+  });
+
+  it("shows Layer 4 validation sources without Layer 1 helper rows", () => {
+    const html = renderToStaticMarkup(
+      <FreshnessBar activeView="validation" data={sourceExampleSectorsResponse} initialExpanded />,
+    );
+
+    expect(html).toContain("Layer 4 수집 내역");
+    expect(html).toContain("Sector snapshots");
+    expect(html).toContain("Yahoo sector prices");
+    expect(html).toContain("FRED macro series");
+    expect(html).toContain("S01 중앙은행 정책");
+    expect(html).not.toContain("Layer 1 SPY");
+    expect(html).not.toContain("Layer 1 ^VIX");
+  });
+
+  it("labels Layer 4 context as validation, replay, coverage, and probability gate", () => {
+    const html = renderToStaticMarkup(
+      <ContextRail activeView="validation" data={sourceExampleSectorsResponse} validation={sourceExampleValidationResponse} />,
+    );
+
+    expect(html).toContain("검증");
+    expect(html).toContain("이력 진단 완료");
+    expect(html).toContain("Replay");
+    expect(html).toContain("2/3 가능");
+    expect(html).toContain("패턴 진단");
+    expect(html).toContain("4/4 완료");
+    expect(html).toContain("확률 게이트");
+    expect(html).not.toContain("RS 리더");
   });
 });

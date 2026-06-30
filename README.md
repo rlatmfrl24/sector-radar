@@ -17,9 +17,14 @@ Layer 2 여력
 
 Layer 3 리더십
   현재 RS 리더 상세, 모멘텀 선두 후보, RRG, path, treemap, selected-sector inspector
+
+Layer 4 검증
+  검증 진행 단계, 이력 진단 상태, replay 가능 범위, pattern diagnostics, 확률 게이트, scheduled audit
 ```
 
 Layer 3에서는 **현재 RS 리더**와 **모멘텀 선두**를 같은 “주도섹터”로 부르지 않습니다. 둘이 다르면 오류가 아니라 리더십 전환 관찰 신호로 표시합니다.
+
+Layer 4는 Layer 1~3 판단을 예측처럼 확장하지 않고, D1 이력에서 20D/60D forward relative diagnostics를 계산해 pattern별 historical diagnostics로 분리해 보여줍니다. 화면은 데이터 수집, replay, 패턴 진단, 확률 보정 단계를 분리해 보여주며, 이력 진단이 완료되면 `historical_ready`로 표시합니다. Calibration 전에는 확률성 판단 문구를 노출하지 않습니다.
 
 ## Architecture
 
@@ -37,6 +42,7 @@ Yahoo/FRED Scheduled Worker -> D1 -> Pages Function API -> React UI
 GET  /api/sectors
 GET  /api/history
 GET  /api/validation
+GET  /api/validation/status
 GET  /api/data/status
 POST /api/refresh
 ```
@@ -81,7 +87,7 @@ npm run test:worker
 | `src/sector_radar/metrics/` | RS/RRG, breadth, participation metrics |
 | `src/sector_radar/rules/sector_rulebook.py` | pattern matching, veto, narrative, risks, invalidation |
 | `src/sector_radar/api/local_server.py` | local SQLite API for frontend development |
-| `frontend/src/features/radar/` | 3-layer dashboard view model and components |
+| `frontend/src/features/radar/` | 4-layer dashboard view model and components |
 | `frontend/functions/api/` | Cloudflare Pages Function API |
 | `frontend/workers/ingest/` | Scheduled Yahoo/FRED ingestion worker |
 | `frontend/migrations/` | D1 schema migrations |
@@ -95,7 +101,7 @@ Read in this order:
 3. `DESIGN.md` — current dashboard design system
 4. `docs/02_MVP_SPEC.md` — current MVP user stories
 5. `docs/03_ARCHITECTURE.md` — data and UI architecture
-6. `docs/08_UI_SPEC.md` — 3-layer UI specification
+6. `docs/08_UI_SPEC.md` — 4-layer UI specification
 7. `docs/09_API_CONTRACT.md` — API/JSON contract
 8. `docs/13_CLOUDFLARE_DEPLOYMENT.md` — deployment and operations
 

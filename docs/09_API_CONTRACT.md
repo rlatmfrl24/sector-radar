@@ -371,6 +371,14 @@ Layer 3 리더십:
   concentration
   validation
   source_freshness scoped to sector snapshot/leadership rows
+
+Layer 4 검증:
+  validation.status
+  validation.expose_probability
+  /api/validation coverage, replay windows, pattern diagnostics, and any actual data limits
+  /api/history coverage for replay readiness
+  sectors[].rulebook.lead_pattern for fallback readiness when diagnostics are unavailable
+  source_freshness scoped to sector snapshot, Yahoo history, and FRED/context coverage rows
 ```
 
 현재 API는 별도 `summary` 객체를 제공하지 않습니다. Leading/Improving/Weakening/Lagging 그룹, warning sector, constructive count는 UI helper가 `sectors[]`에서 파생합니다.
@@ -393,27 +401,101 @@ GET /api/sectors
 GET /api/data/status
 GET /api/history
 GET /api/validation
+GET /api/validation/status
 POST /api/refresh
 ```
 
 `GET /api/history` returns bounded trails for RRG and market context. It accepts `timeframe=30D|90D|180D` and still supports the older bounded `limit` parameter. If not enough data exists, it degrades to empty arrays.
 
-`GET /api/validation` starts as:
+`GET /api/validation` returns Layer 4 historical diagnostics derived from `sector_metrics_daily` and `series_daily`. It does not expose calibrated probabilities.
 
 ```json
 {
-  "status": "unvalidated",
+  "status": "historical_ready",
   "expose_probability": false,
   "scorecard": {
     "sector_rrg_ic": null,
     "pattern_hit_rate": null,
-    "sample_size": 0
+    "sample_size": 792
   },
-  "limitations": [
-    "Walk-forward validation and calibration are not implemented yet."
-  ]
+  "coverage": {
+    "sector_snapshots": 1512,
+    "sector_history_days": 126,
+    "market_context_points": 504,
+    "market_context_days": 126
+  },
+  "replay_windows": [
+    {
+      "timeframe": "90D",
+      "requested_days": 90,
+      "available_sector_days": 126,
+      "effective_days": 90,
+      "limited_by_data": false,
+      "status": "ready"
+    }
+  ],
+  "pattern_diagnostics": [
+    {
+      "pattern": "Emerging Leader",
+      "sample_size": 126,
+      "evaluated_20d": 106,
+      "evaluated_60d": 66,
+      "fwd_rel_20d_median": 0.8,
+      "fwd_rel_60d_median": 1.7,
+      "max_drawdown_20d_median": -3.1,
+      "leading_after_20d_count": 42,
+      "status": "ready",
+      "next_step": "Monitor with scheduled audit"
+    }
+  ],
+  "schedule": {
+    "api": "/api/validation/status",
+    "cron": "Runs after each sector-radar-ingest scheduled refresh.",
+    "last_run_at": "2026-06-26T21:10:00+00:00",
+    "last_run_status": "success",
+    "run_type": "layer4_validation_audit"
+  },
+  "limitations": []
 }
 ```
+
+Layer 4 uses this response without requiring a new migration. The React view derives:
+
+```text
+validationGate = status + expose_probability
+coverageCards = sector_snapshots + sector_history_days + market_context_points + market_context_days
+replayWindows = 30D / 90D / 180D readiness from /api/validation, falling back to /api/history coverage
+patternDiagnostics = historical 20D/60D forward relative diagnostics by rule_pattern
+blockedCopy = limitations only when data is unavailable or insufficient
+```
+
+`expose_probability` remains `false` until walk-forward validation and calibration are implemented.
+When `status = "historical_ready"`, the diagnostics API may return an empty `limitations` array. Probability gating is represented by `expose_probability = false`, not as a blocking limitation.
+
+`GET /api/validation/status` returns a compact operational status for monitors and smoke checks:
+
+```json
+{
+  "service": "layer4-validation",
+  "status": "historical_ready",
+  "expose_probability": false,
+  "diagnostics_ready": 4,
+  "diagnostics_total": 6,
+  "schedule": {
+    "run_type": "layer4_validation_audit",
+    "last_run_status": "success"
+  }
+}
+```
+
+Frontend fallback for Layer 4 QA:
+
+```text
+sourceExampleValidationResponse
+sourceExampleHistoryResponse(timeframe)
+```
+
+These temporary fixtures are used when `?qa=source-examples` is active or when the history/validation API is unavailable or returns no coverage. They may show `status = historical_ready` for UI verification, but must keep `expose_probability = false` and an explicit temporary fixture limitation.
 
 ## 6. Error Contract
 
