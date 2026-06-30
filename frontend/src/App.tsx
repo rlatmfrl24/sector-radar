@@ -43,7 +43,7 @@ function App() {
       setData(snapshot.data);
       setHistory(snapshot.history);
       setValidation(snapshot.validation);
-      setSelectedCode((current) => selectSnapshotSectorCode(current, snapshot.data.sectors, preserveSelected));
+      setSelectedCode((current) => selectSnapshotSectorCode(current, sortSectors(snapshot.data.sectors), preserveSelected));
     },
     [],
   );
@@ -101,11 +101,11 @@ function App() {
 
 
   const sectors = data?.sectors ?? [];
-  const selected = sectors.find((sector) => sector.sector_code === selectedCode) ?? sectors[0];
   const rankedSectors = useMemo(() => sortSectors(sectors), [sectors]);
   const momentumSectors = useMemo(() => sortSectorsByMomentum(sectors), [sectors]);
-  const selectedMomentumSector =
-    momentumSectors.find((sector) => sector.sector_code === selectedCode) ?? momentumSectors[0] ?? selected;
+  const selected = sectors.find((sector) => sector.sector_code === selectedCode) ?? rankedSectors[0] ?? sectors[0];
+  const selectedLeadershipSector =
+    rankedSectors.find((sector) => sector.sector_code === selectedCode) ?? rankedSectors[0] ?? selected;
   const grouped = useMemo(() => groupByQuadrant(sectors), [sectors]);
   const warnings = useMemo(() => sectors.filter(isWarningSector), [sectors]);
   const healthyBreadthCount = sectors.filter(hasHealthyBreadth).length;
@@ -172,10 +172,12 @@ function App() {
           />
         ) : (
           <LayerThreeLeadership
+            currentLeader={rankedSectors[0]}
             onSelect={setSelectedCode}
+            momentumLeader={momentumSectors[0]}
             sectors={momentumSectors}
-            selected={selectedMomentumSector}
-            selectedCode={selectedMomentumSector.sector_code}
+            selected={selectedLeadershipSector}
+            selectedCode={selectedLeadershipSector.sector_code}
             history={history}
             historyTimeframe={historyTimeframe}
             onHistoryTimeframeChange={handleHistoryTimeframeChange}

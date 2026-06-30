@@ -10,41 +10,47 @@
 
 ## 3. 핵심 사용자 스토리
 
-### Story 1 — 현재 리더 확인
+### Story 1 — 시장 흐름 확인
 
 ```text
-사용자는 대시보드 첫 화면에서 현재 Leading 섹터와 Improving 섹터를 볼 수 있다.
+사용자는 Layer 1에서 시장 tape, breadth quality, 변동성 압력, 현재 RS 리더를 먼저 확인할 수 있다.
 ```
 
 Acceptance Criteria:
 
-- 섹터별 RRG quadrant 표시
-- Top Leader / Top Improver 리스트 표시
-- 각 섹터의 데이터 기준일 표시
+- Layer 1 상단 탭과 독립 화면 표시
+- 현재 흐름 판정, transition, narrative 표시
+- 주도/순환 섹터 수와 경고 섹터 수 표시
+- Layer 1 관련 수집원만 수집 내역에 표시
+- easy mode에서는 쉬운 해설 화면으로 전환 가능
 
-### Story 2 — 강세의 건강도 확인
+### Story 2 — 유동성/여력 확인
 
 ```text
-사용자는 특정 섹터의 강세가 섹터 전체로 확산되는지 확인할 수 있다.
+사용자는 Layer 2에서 ETF participation, 공식 FRED market context, risk trigger를 별도 화면에서 확인할 수 있다.
 ```
 
 Acceptance Criteria:
 
-- 20/50/200MA 위 종목 비율 표시
-- Breadth state 표시
-- RS 강세 + Breadth 약화 시 경고 표시
+- RVOL, OBV slope, CMF 기반 Participation state 표시
+- S01/S02/S03/S05 market context 카드 표시
+- Trigger watchlist 표시
+- Layer 2 관련 수집원만 수집 내역에 표시
+- 공식 원천과 보조/후보 원천을 혼동하지 않음
 
-### Story 3 — 거래량 확인
+### Story 3 — 리더십 상세와 회전 후보 확인
 
 ```text
-사용자는 가격 상승이 거래량과 money flow로 확인되는지 볼 수 있다.
+사용자는 Layer 3에서 현재 RS 리더와 모멘텀 선두 후보를 분리해 보고, 선택 섹터의 RRG 위치와 rulebook 판단을 확인할 수 있다.
 ```
 
 Acceptance Criteria:
 
-- RVOL, OBV slope, CMF 표시
-- Participation state 표시
-- RS 강세 + Participation 약화 시 False Leadership flag 표시
+- Layer 3 기본 상세 선택은 Layer 1의 현재 RS 리더를 따른다.
+- 좌측 레일은 `rs_momentum` 기준 모멘텀 선두 후보를 보여준다.
+- 현재 RS 리더와 모멘텀 선두가 다르면 전환 관찰 신호로 표시한다.
+- RRG plot, RRG path, treemap, selected-sector inspector 표시
+- selected-sector inspector는 pattern, narrative, risks, invalidation, data freshness를 포함한다.
 
 ### Story 4 — 해석과 무효화 조건
 
@@ -98,7 +104,10 @@ SMH  - Semiconductors satellite
 | Participation | RVOL / OBV / CMF | P0 |
 | Manual catalyst | 수동 촉매 입력 | P1 |
 | Rulebook | 패턴 해석 | P0 |
-| Dashboard | overview + detail | P0 |
+| Dashboard | Layer 1 흐름 + Layer 2 여력 + Layer 3 리더십 상세 | P0 |
+| Source freshness | 활성 Layer 관련 수집원만 표시 | P0 |
+| Context reconciliation | 섹터 리더십과 Layer 2 환경의 정합성/불일치 표시 | P0 |
+| Trigger watchlist | risk trigger를 qualitative 상태로 표시 | P0 |
 | Replay | 과거 날짜 재생 | P1 |
 | Validation | 패턴별 검증 | P1 |
 
@@ -145,6 +154,24 @@ MVP에서 하지 않을 것:
     "metrics_latest": "2026-06-22"
   }
 }
+```
+
+현재 대시보드가 읽는 상위 응답은 단일 섹터 객체가 아니라 `/api/sectors`의 `SectorsResponse`입니다. 주요 top-level 필드는 다음과 같습니다.
+
+```text
+as_of
+benchmark
+sectors[]
+validation
+data_connection
+data_connections
+market_context
+layer1_flow
+concentration
+source_freshness
+source_expansion
+watchlist
+context_reconciliation
 ```
 
 ## 8. MVP 완료 후 첫 확장

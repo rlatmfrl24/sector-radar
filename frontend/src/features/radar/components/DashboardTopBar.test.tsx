@@ -23,6 +23,7 @@ describe("DashboardTopBar explain mode", () => {
     expect(html).toContain("Layer 1 흐름을 초보자용 쉬운 해설 화면으로 전환합니다.");
     expect(html).toContain("Layer 1");
     expect(html).toContain("Layer 2");
+    expect(html).toContain("리더십");
   });
 
   it("does not show the Layer 1 explain toggle on Layer 2 or Layer 3 screens", () => {

@@ -13,7 +13,7 @@ sector_radar.snapshot.build_sector_snapshot(...)
 sector_radar.pipeline.build_relative_strength_snapshot_from_db(...)
 ```
 
-첫 구현 slice에서는 Relative Strength와 Momentum이 계산되고, Breadth/Participation은 아직 pipeline에 연결되지 않은 경우 `unknown` module state로 표시될 수 있습니다.
+현재 Cloudflare Scheduled Worker 경로는 RS/RRG, breadth, participation, rulebook, Layer 1 flow, Layer 2 market context를 D1에 저장합니다. 로컬 fixture나 초기 DB에서는 Breadth/Participation이 아직 충분하지 않아 `unknown` module state로 표시될 수 있습니다.
 
 ```json
 {
@@ -326,26 +326,54 @@ context_reconciliation.state = supportive | divergent | risk_rising | rotation_w
 
 Cloudflare Pages public API에서는 직접 Yahoo를 호출하지 않고 `refresh_unavailable_in_pages`를 반환합니다. 배포 환경의 Yahoo 갱신은 Scheduled Worker cron이 담당합니다.
 
-## 4. Overview Response
+## 4. Current Dashboard Response
 
-```json
-{
-  "as_of": "2026-06-23",
-  "benchmark": "SPY",
-  "summary": {
-    "leading": ["SMH", "XLK"],
-    "improving": ["XLI", "XLF"],
-    "weakening": ["XLE"],
-    "lagging": ["XLU", "XLP"],
-    "warnings": {
-      "false_leadership": ["XLY"],
-      "mega_cap_dependence": ["XLK"],
-      "breakdown": []
-    }
-  },
-  "sectors": []
-}
+현재 React 앱은 `/api/sectors`, `/api/history`, `/api/validation`을 함께 읽어 `DashboardSnapshot`을 구성합니다.
+
+`GET /api/sectors`의 top-level 필드:
+
+```text
+as_of
+benchmark
+sectors[]
+validation
+source
+data_connection
+data_connections
+market_context
+layer1_flow
+concentration
+source_freshness
+source_expansion
+watchlist
+context_reconciliation
 ```
+
+화면별 사용 규칙:
+
+```text
+Layer 1 흐름:
+  layer1_flow
+  sectors sorted by rulebook.strength desc, rs_ratio desc
+  context_reconciliation
+  source_freshness scoped to Layer 1 helper series
+
+Layer 2 여력:
+  market_context
+  sectors participation modules
+  watchlist
+  source_freshness scoped to Layer 2 Yahoo/FRED/context rows
+
+Layer 3 리더십:
+  sectors sorted two ways:
+    current RS leader detail = sortSectors(rulebook.strength desc, rs_ratio desc)
+    momentum candidate rail = sortSectorsByMomentum(rs_momentum desc, rs_ratio desc)
+  concentration
+  validation
+  source_freshness scoped to sector snapshot/leadership rows
+```
+
+현재 API는 별도 `summary` 객체를 제공하지 않습니다. Leading/Improving/Weakening/Lagging 그룹, warning sector, constructive count는 UI helper가 `sectors[]`에서 파생합니다.
 
 ## 5. Future API Endpoints
 

@@ -1,136 +1,112 @@
 # 12. Agent Prompts
 
-이 문서는 Codex, Cursor, Claude Code 등 코딩 에이전트에게 작업을 맡길 때 사용할 수 있는 프롬프트 모음입니다.
+이 문서는 Codex, Cursor, Claude Code 같은 코딩 에이전트에게 작업을 맡길 때 사용할 현재 버전용 프롬프트입니다.
 
-## 1. 프로젝트 부트스트랩 프롬프트
+부트스트랩 프롬프트는 제거했습니다. 저장소 구조는 이미 존재하므로 새 에이전트에게 초기 scaffold를 다시 만들게 하지 않습니다.
+
+## 1. 공통 시작 프롬프트
 
 ```text
-You are implementing the Sector Radar MVP. Read AGENTS.md, PROJECT_CHARTER.md, and docs/01_IMPLEMENTATION_PLAN.md first.
+You are working on Sector Radar.
 
-Create the initial Python package structure with pyproject.toml, src/sector_radar, tests, config, and frontend directories. Add pytest, ruff, mypy settings. Do not implement network ingestion yet. Add placeholder modules for data, metrics, rules, validation, and React UI. Ensure `pytest` runs.
+Read AGENTS.md, PROJECT_CHARTER.md, README.md, DESIGN.md, and the task-relevant docs first.
 
-Follow these constraints:
-- Do not expose investment advice.
-- Do not expose unvalidated probabilities.
-- Keep thresholds in config.
-- Add or update docs if structure changes.
+Keep the product sector-first. Do not expose investment advice, unvalidated probabilities, hit rates, expected returns, or buy/sell recommendations. Preserve module disagreement as signal. Keep thresholds in config or injected runtime settings.
+
+Before finishing, update docs when behavior or contracts change.
 ```
 
-## 2. SQLite 저장층 구현 프롬프트
+## 2. Dashboard UI 작업 프롬프트
 
 ```text
-Implement the SQLite storage layer for Sector Radar MVP.
+Update the React dashboard.
 
-Read AGENTS.md and docs/04_DATA_MODEL.md. Implement:
-- init_db(db_path)
-- upsert_series_daily(...)
-- get_latest_date(series_id, field='close')
-- query_series(series_id, field, start, end)
-- upsert_sector_metrics(...)
+Read DESIGN.md, docs/08_UI_SPEC.md, docs/09_API_CONTRACT.md, and skills/skill_dashboard_engineer.md.
+
+Maintain the current 3-layer structure:
+- Layer 1 흐름
+- Layer 2 여력
+- Layer 3 리더십
 
 Requirements:
-- Use sqlite3 from stdlib.
-- All writes must be idempotent.
-- Enable WAL mode.
-- Add unit tests with a temporary database.
-- Do not add network calls.
+- Do not compute metrics inside UI.
+- Keep source freshness scoped to the active Layer.
+- Layer 3 default inspector follows the current RS leader.
+- Momentum rail is sorted by rs_momentum desc, rs_ratio desc.
+- Do not call both current RS leader and momentum leader "주도섹터".
+- Show narrative, risks, invalidation, data freshness, and validation status.
+- Run npm run test:app and npm run build.
 ```
 
-## 3. Relative Strength 구현 프롬프트
+## 3. API / Contract 작업 프롬프트
 
 ```text
-Implement Relative Strength and RRG quadrant classification.
+Update the dashboard API contract.
 
-Read docs/05_METRICS_AND_STATES.md. Implement pure pandas functions:
-- compute_rs_raw(sector_close, benchmark_close)
-- compute_rs_ratio(rs_raw, window)
-- compute_rs_momentum(rs_ratio, window)
-- classify_rrg_quadrant(rs_ratio, rs_momentum)
+Read docs/09_API_CONTRACT.md, docs/03_ARCHITECTURE.md, and frontend/src/types.ts.
 
-Add synthetic tests for all four quadrants. Do not hard-code thresholds; accept them as parameters or config.
+Maintain:
+- GET /api/sectors top-level SectorsResponse
+- GET /api/history timeframe=30D|90D|180D
+- GET /api/validation with expose_probability=false
+- GET /api/data/status
+- POST /api/refresh returning refresh_unavailable_in_pages on public Pages
+
+If response shape changes, update frontend/src/types.ts, docs/09_API_CONTRACT.md, and tests.
 ```
 
-## 4. Breadth 구현 프롬프트
+## 4. Data / Ingestion 작업 프롬프트
 
 ```text
-Implement sector breadth metrics using representative holdings.
+Update data ingestion or storage.
 
-Inputs: DataFrame with columns date, symbol, close.
-Outputs by sector/date:
-- pct_above_20ma
-- pct_above_50ma
-- pct_above_200ma
-- breadth_state
-- breadth_transition
+Read docs/04_DATA_MODEL.md, docs/13_CLOUDFLARE_DEPLOYMENT.md, docs/15_DATA_SOURCE_EXPANSION.md, and skills/skill_data_engineer.md.
 
-Read docs/05_METRICS_AND_STATES.md. Add tests for broad_strength, narrow, breakdown, and insufficient lookback.
+Requirements:
+- Keep raw series and derived snapshots separate.
+- Store source, fetched_at, provider, and freshness metadata.
+- Keep writes idempotent.
+- Preserve SQLite and D1 contract compatibility.
+- Do not add network calls to unit tests.
+- Keep public Pages refresh disabled; scheduled Worker owns Cloudflare refresh.
 ```
 
-## 5. Participation 구현 프롬프트
+## 5. Metrics 작업 프롬프트
 
 ```text
-Implement participation metrics.
+Update metric functions.
 
-Functions:
-- compute_rvol(volume, window=20)
-- compute_obv(close, volume)
-- compute_obv_slope(obv, window=20)
-- compute_cmf(high, low, close, volume, window=20)
-- classify_participation(...)
+Read docs/05_METRICS_AND_STATES.md and skills/skill_quant_metrics_engineer.md.
 
-Handle zero high-low range safely. Add tests for accumulation, divergence, distribution, and zero-volume edge cases.
+Implement pure functions for RS/RRG, breadth, or participation. Do not import UI, API, or DB code into metric functions. Thresholds must be configurable. Add synthetic tests for missing data, flat prices, zero volume, and each expected state transition.
 ```
 
-## 6. Rulebook 구현 프롬프트
+## 6. Rulebook 작업 프롬프트
 
 ```text
-Implement Sector Rulebook pattern matching.
+Update Sector Rulebook.
 
-Read docs/06_SECTOR_RULEBOOK.md. Create dataclasses or pydantic models for ModuleState and RulebookOutput. Implement patterns:
-- Strong Leader
-- Emerging Leader
-- Healthy Expansion
-- Late Leader
-- Mega-cap Dependence
-- False Leadership
-- Early Rotation
-- Structural Winner
-- Weak Expansion
-- Breakdown
+Read docs/06_SECTOR_RULEBOOK.md and skills/skill_rulebook_engineer.md.
 
-Implement veto rules:
-- Momentum Collapse
-- Participation Breakdown
-- Catalyst Reversal
-- Broad Breadth Collapse
-- Data Insufficient
-
-Each output must include narrative, risks, and invalidation. Add tests for each pattern.
+Every output must include direction, strength, conviction_label, lead_pattern, narrative, risks, invalidation, source_metrics, and data_freshness. Do not average module scores. Do not expose probabilities. Add pattern tests and update docs when patterns or veto rules change.
 ```
 
-## 7. React Dashboard MVP 프롬프트
+## 7. Validation 작업 프롬프트
 
 ```text
-Build the React dashboard MVP.
+Implement replay or validation.
 
-Read docs/08_UI_SPEC.md and docs/09_API_CONTRACT.md. Build:
-- Overview
-- RRG
-- Sector Detail
-- Data Health
+Read docs/07_VALIDATION_PLAN.md and skills/skill_validation_engineer.md.
 
-Use fixture or API-loaded sector snapshots. Do not compute metrics inside the UI. The UI should display states, patterns, narrative, risks, invalidation, and data freshness. Do not display probabilities. Prepare the app for Cloudflare Pages with D1-backed Pages Functions.
+Validation outputs may include descriptive diagnostics inside Verification/Validation surfaces only. Main dashboard copy must remain probability-free. Keep expose_probability=false until walk-forward validation and calibration are explicitly implemented.
 ```
 
-## 8. Validation 프롬프트
+## 8. Documentation 작업 프롬프트
 
 ```text
-Implement Replay and Validation skeleton.
+Clean up documentation.
 
-Read docs/07_VALIDATION_PLAN.md. Implement functions to:
-- load sector snapshots as of a historical date
-- compute forward relative returns for 20D and 60D
-- summarize outcomes by rulebook pattern
+Read README.md, AGENTS.md, DESIGN.md, docs/08_UI_SPEC.md, docs/09_API_CONTRACT.md, and skills/skill_documentation_writer.md.
 
-Do not expose probabilities. Output historical descriptive statistics only.
+Remove duplicate or obsolete bootstrap guidance. Keep README as the primary document map. Keep DESIGN.md aligned with the current dashboard, not external brand analysis. Search for obsolete terms such as Overview, Sector Detail, Data Health screen, 주도·섹터, 주도섹터, Selected Sector, and Sector Leadership before finishing.
 ```

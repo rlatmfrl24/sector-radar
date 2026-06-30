@@ -28,8 +28,18 @@ Sector Radar는 다음 성격의 제품입니다.
 | Research Dashboard | 투자자가 시장 내부 흐름을 관찰하는 도구 |
 | Decision Support | 매수/매도 명령이 아니라 의사결정 보조 |
 | Explainable Engine | 숫자보다 해석, 리스크, 무효화 조건을 함께 제시 |
-| Local-first Tool | 초기에는 로컬 DB와 로컬 대시보드 중심 |
+| Local-first + Deployable | 로컬 SQLite 연구 엔진과 Cloudflare Pages/D1 대시보드를 함께 유지 |
 | Modular System | Macro·Stock·Strategy로 확장 가능 |
+
+현재 대시보드는 세 화면으로 구성됩니다.
+
+```text
+Layer 1 흐름: 시장 tape, breadth quality, volatility pressure, 현재 RS 리더
+Layer 2 여력: ETF participation, FRED market context, risk trigger
+Layer 3 리더십: 현재 RS 리더 상세, 모멘텀 선두 후보, RRG/path/treemap
+```
+
+현재 RS 리더와 모멘텀 선두가 다를 수 있으며, 이 불일치는 오류가 아니라 리더십 전환 관찰 신호입니다.
 
 ## 4. 핵심 원칙
 
@@ -92,7 +102,7 @@ MVP는 다음 조건을 만족하면 완료로 봅니다.
 4. Rulebook이 최소 6개 이상의 패턴을 인식한다.
 5. 각 섹터별 narrative, risks, invalidation이 출력된다.
 6. 테스트가 synthetic fixture와 실제 샘플 데이터에서 모두 통과한다.
-7. 대시보드에서 “리더 / 차기 리더 / 경고 섹터”를 1분 안에 이해할 수 있다.
+7. 대시보드에서 “현재 RS 리더 / 모멘텀 선두 후보 / 경고 섹터”를 1분 안에 이해할 수 있다.
 
 ## 7. 장기 방향
 

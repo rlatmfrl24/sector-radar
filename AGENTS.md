@@ -118,9 +118,11 @@ docs/
   11_DEVELOPMENT_WORKFLOW.md
   12_AGENT_PROMPTS.md
   13_CLOUDFLARE_DEPLOYMENT.md
+  14_MARKET_DASHBOARD_BENCHMARK.md
+  15_DATA_SOURCE_EXPANSION.md
 
 skills/
-  role-specific implementation skills
+  role-specific implementation checklists
 
 src/sector_radar/
   domain/
@@ -140,6 +142,9 @@ src/sector_radar/
 frontend/
   React + Vite dashboard and Cloudflare Pages configuration
   src/features/radar/               # dashboard view model and components
+  functions/api/                     # Pages Function API
+  workers/ingest/                    # scheduled ingestion worker
+  migrations/                        # D1 migrations
 
 tests/
   unit and synthetic tests
@@ -149,19 +154,16 @@ tests/
 
 Follow this order unless the user explicitly changes scope.
 
-1. Project bootstrap
-2. SQLite schema and store helpers
-3. Universe config loader
-4. Price ingestion adapter interface
-5. Relative strength and RRG classification
-6. Momentum metrics
-7. Breadth metrics using representative holdings
-8. Participation metrics
-9. Manual catalyst ledger
-10. Sector Rulebook
-11. React MVP dashboard
-12. Replay and validation harness
-13. Stock Engine expansion
+1. Maintain SQLite/D1 schema and idempotent store helpers
+2. Maintain universe/threshold config loaders
+3. Maintain price and market-context ingestion adapters
+4. Maintain relative strength, RRG, breadth, and participation metrics
+5. Maintain Sector Rulebook patterns, vetoes, narratives, risks, invalidation
+6. Maintain React 3-layer dashboard: Layer 1 흐름, Layer 2 여력, Layer 3 리더십
+7. Maintain layer-scoped source freshness and validation gate
+8. Build replay and validation harness before exposing any probability-like metric
+9. Connect manual catalyst ledger after freshness and invalidation are trackable
+10. Consider Stock Engine expansion only after sector validation scaffolding exists
 
 ## 5. Data Layer Rules
 
@@ -338,16 +340,15 @@ When working as an implementation agent:
 5. Summarize assumptions in the PR or final response.
 6. If data availability blocks a feature, implement the interface and fixture-based tests first.
 
-## 12. Preferred First Issue
+## 12. Preferred Next Issues
 
-Implement SQLite store helpers and create all base tables:
+The bootstrap phase is complete. Prefer these next issues unless the user explicitly changes scope:
 
 ```text
-series_daily
-sector_metrics_daily
-watchlist_events
-manual_catalyst_ledger
-instrument_master
+1. Replay/validation harness and Verification panel upgrade
+2. Manual catalyst ledger loader and UI integration
+3. Source registry config for provider labels, cadence, warnings, and scope
+4. Official holdings/market-cap concentration source, replacing the current RS proxy where possible
 ```
 
-Then add deterministic tests for upsert behavior.
+Keep all outputs qualitative until walk-forward validation and calibration are implemented.

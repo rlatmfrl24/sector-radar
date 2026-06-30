@@ -32,31 +32,32 @@ tabular numerics for market values
 주의:
 
 ```text
-DESIGN.md의 display negative letter-spacing은 프로젝트 UI 규칙에 맞춰 0으로 정규화한다.
 Sector MVP에 없는 Macro / Stock / Watchlist 기능은 가짜 수치로 렌더링하지 않는다.
-Landing page hero, marketing CTA, product promo copy, decorative mesh-first composition은 사용하지 않는다.
+Landing page hero, marketing CTA, product promo copy, decorative background-first composition은 사용하지 않는다.
+현재 RS 리더와 모멘텀 선두를 같은 `주도섹터` 문구로 합치지 않는다.
 ```
 
 ## 2. 화면 구조
 
 ```text
-Overview
+Dashboard Shell
   ├─ Compact Top Bar: benchmark, as_of, source, validation gate, probability gate
-  ├─ Screen Switch: 흐름 / 여력 / 주도·섹터
-  ├─ Screen A: Layer 1 흐름
+  ├─ Screen Switch: 흐름 / 여력 / 리더십
+  ├─ Layer 1: 흐름
   │   ├─ Layer 1: flow readout strip (leadership, breadth, warnings, reconciliation)
   │   └─ Layer 1: evidence panel (RRG quadrant mix, RS distribution, clusters, breadth, checkpoints)
-  ├─ Screen B: Layer 2 여력
+  ├─ Layer 2: 여력
   │   ├─ Layer 2: live ETF participation snapshot
   │   └─ Layer 2: Yahoo/FRED live/proxy/hold liquidity inputs without fake source claims
-  ├─ Screen C: Layer 3 주도 (섹터)
-  │   ├─ Left Rail: sector leadership ranking
+  ├─ Layer 3: 리더십 상세
+  │   ├─ Flow Strip: 현재 RS 리더와 모멘텀 선두를 분리 표시
+  │   ├─ Left Rail: momentum leader candidates
   │   ├─ Main Canvas: RRG + treemap
   │   └─ Right Inspector: selected sector narrative, module states, risks, invalidation
   └─ No landing hero / no marketing CTA
 
-Sector Detail expansion
-  └─ 보류: Overview inspector에서 충분히 표현한 뒤 필요성이 검증되면 별도 화면으로 확장한다.
+Dedicated sector page expansion
+  └─ 보류: Layer 3 inspector에서 충분히 표현한 뒤 필요성이 검증되면 별도 화면으로 확장한다.
 
 Replay / Validation
   ├─ Date Picker
@@ -65,7 +66,7 @@ Replay / Validation
   └─ Pattern Statistics
 ```
 
-## 3. Overview 화면
+## 3. Dashboard Shell
 
 ### 3.1 Header
 
@@ -74,6 +75,7 @@ Sector Radar
 As of: YYYY-MM-DD
 Benchmark: SPY
 Data freshness: latest close YYYY-MM-DD
+Active layer freshness: Layer 1 / Layer 2 / Layer 3 관련 수집원만 표시
 ```
 
 ### 3.2 Summary Cards
@@ -100,7 +102,7 @@ Lagging
 Layer 1은 같은 숫자를 여러 카드에서 반복하지 않고, 역할을 분리합니다.
 
 ```text
-Overview card:
+Layer 1 readout:
   - 현재 흐름 판정
   - 주도/순환 섹터 수
   - breadth 정합성
@@ -163,6 +165,15 @@ Market context card:
 ```
 
 Layer 1/2의 좌측 패널은 사용자가 먼저 읽는 판단 영역이다. Layer 1은 판단 관련 문장을 `흐름 최종 판단`으로 병합하고, 우측은 근거와 상세 지표를 확인하는 보조 영역으로 유지한다. Layer 2의 요약 문장은 별도 카드처럼 감싸지 말고 요약 제목 아래의 리드 텍스트로 둔다. `다음 확인` 같은 모호한 표현은 피하고 `확인 체크리스트`처럼 무엇을 확인하는지 드러나는 제목을 사용한다.
+
+Layer 3는 Layer 1의 이해 흐름을 이어야 한다. 기본 상세 선택은 Layer 1에서 쓰는 현재 RS 리더 정렬을 따른다. 단, 좌측 레일은 `rs_momentum` 기준의 모멘텀 선두 후보를 유지한다. 현재 RS 리더와 모멘텀 선두가 다르면 두 값을 같은 `주도섹터`로 부르지 않고 다음처럼 분리한다.
+
+```text
+현재 RS 리더: 높은 상대강도 또는 rulebook strength로 앞선 기존 리더
+모멘텀 선두: rs_momentum 기준으로 가장 빠르게 좋아지는 회전 후보
+```
+
+이 차이는 오류가 아니라 리더십 전환 관찰 신호로 표시한다.
 
 벤치마크 UI에서 흡수할 수 있는 방향은 "요약 문장 + 근거 카드"의 분리입니다. Layer 1은 가격 흐름, 폭, 변동성, 정합성을 빠르게 확인하는 곳이므로 다음 데이터는 후속 수집 후보로 둡니다.
 
@@ -232,18 +243,20 @@ Weakening
 Lagging
 ```
 
-각 점은 섹터 ETF입니다. MVP에서는 현재 점만 표시하고, P1에서 trailing tail을 추가합니다.
+각 점은 섹터 ETF입니다. 현재 위치는 최신 sector snapshot에서 그리고, 선택 섹터의 경로는 `/api/history?timeframe=30D|90D|180D`로 받은 RRG path에서 표시합니다. 히스토리가 부족하면 path 영역은 준비 상태와 coverage를 보여줍니다.
 
-## 5. Sector Detail 화면
+## 5. Layer 3 리더십 상세 화면
 
 ### 5.1 Top Summary
 
 ```text
-Sector: SMH Semiconductors
-Pattern: Strong Leader
-Direction: Strong Up
-Conviction: High
+현재 RS 리더: SMH
+모멘텀 선두: XLV
+상태: 기존 리더와 모멘텀 선두가 달라 전환 관찰 구간
+선택 상세: SMH Semiconductors / Late Leader / Weakening
 ```
+
+Layer 3 기본 상세 선택은 Layer 1의 현재 RS 리더를 따른다. 좌측 rail은 모멘텀 선두 후보를 보여주므로, 선택 상세와 rail 1위가 다를 수 있다. 이 불일치는 오류가 아니라 전환 신호로 표시한다.
 
 ### 5.2 Narrative
 
@@ -280,25 +293,30 @@ Transition: Strengthening
 Evidence: RS Ratio 104.2, RS Momentum 101.8
 ```
 
-## 7. Data Health Panel
+## 7. Source Freshness / Data Health
 
 표시 항목:
 
 ```text
 latest price date
-missing series count
-unknown module count
-last compute time
-database path
 provider
+provider mode/status
+last success
+next allowed collection
+active Layer source rows
+source class
+frequency
+stale/live/manual_check status
 ```
+
+이 정보는 독립 화면이 아니라 `FreshnessBar`, `SourceFreshnessPanel`, `ContextRail`에서 표시한다. 활성 탭과 무관한 수집원은 현재 화면의 primary diagnostics에 섞지 않는다.
 
 ## 8. MVP UI 구현 방식
 
 React + Vite 우선:
 
 ```text
-frontend/src/App.tsx: three-screen Overview switch, Screen A Layer 1, Screen B Layer 2, Screen C Layer 3
+frontend/src/App.tsx: three-layer screen switch, Layer 1 흐름, Layer 2 여력, Layer 3 리더십
 frontend/functions/api/sectors.ts: D1-backed sector snapshots
 frontend/wrangler.jsonc: Cloudflare Pages + D1 binding
 ```
@@ -323,9 +341,9 @@ no fake macro or stock metrics
 
 ```text
 desktop: app shell은 100dvh 안에 고정하고 선택된 화면이 남은 높이를 모두 사용한다.
-desktop Screen A: Layer 1은 화면 전체를 사용하며 market tape, breadth, volatility evidence가 선택 화면 내부에서만 스크롤된다.
-desktop Screen B: Layer 2는 화면 전체를 사용하며 participation, market context, risk trigger가 선택 화면 내부에서만 스크롤된다.
-desktop Screen C: Layer 3는 화면 전체를 사용하며 leadership rail과 selected inspector는 내부 스크롤만 허용한다.
+desktop Layer 1: 화면 전체를 사용하며 market tape, breadth, volatility evidence가 선택 화면 내부에서만 스크롤된다.
+desktop Layer 2: 화면 전체를 사용하며 participation, market context, risk trigger가 선택 화면 내부에서만 스크롤된다.
+desktop Layer 3: 화면 전체를 사용하며 momentum rail과 selected inspector는 내부 스크롤만 허용한다.
 tablet/mobile: 선택된 화면 내부만 세로 스크롤되고, top bar/status는 가로 스크롤 대신 반응형 그리드로 접힌다.
 screen switch는 local UI state로 동작하며 route를 늘리지 않는다.
 ```

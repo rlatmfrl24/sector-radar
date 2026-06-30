@@ -14,11 +14,10 @@
 | Skill | 사용 시점 |
 |---|---|
 | `skill_project_orchestrator.md` | 전체 범위 조정, 이슈 분해, 로드맵 관리 |
-| `skill_repo_bootstrap.md` | 저장소 초기 생성 |
 | `skill_data_engineer.md` | SQLite, ingestion, freshness |
 | `skill_quant_metrics_engineer.md` | RS, Momentum, Breadth, Participation 계산 |
 | `skill_rulebook_engineer.md` | Sector Rulebook, pattern, veto, narrative |
-| `skill_dashboard_engineer.md` | React UI |
+| `skill_dashboard_engineer.md` | React 3-layer dashboard UI |
 | `skill_validation_engineer.md` | Replay, backtest, validation gate |
-| `skill_stock_engine_researcher.md` | Stock Engine 확장 설계 |
+| `skill_stock_engine_researcher.md` | Sector validation 이후 Stock Candidate Funnel 확장 설계 |
 | `skill_documentation_writer.md` | 문서와 사용자 설명 개선 |

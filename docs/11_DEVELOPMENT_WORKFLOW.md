@@ -5,11 +5,11 @@
 작은 단위의 브랜치를 권장합니다.
 
 ```text
-feat/sqlite-store
-feat/relative-strength
-feat/sector-rulebook
-feat/react-overview
+feat/source-registry
+feat/manual-catalyst-ledger
 feat/replay-validation
+fix/layer3-leadership-flow
+docs/current-docs-cleanup
 ```
 
 ## 2. 커밋 규칙
@@ -47,6 +47,11 @@ pytest
 ruff check .
 ruff format .
 mypy src
+
+cd frontend
+npm run test:app
+npm run test:worker
+npm run build
 ```
 
 ## 5. Definition of Done
@@ -90,6 +95,16 @@ config/catalysts.manual.example.yaml
 docs/03_ARCHITECTURE.md
 docs/05_METRICS_AND_STATES.md
 docs/09_API_CONTRACT.md
+```
+
+UI 동작 또는 화면 용어 변경 시:
+
+```text
+DESIGN.md
+docs/08_UI_SPEC.md
+docs/09_API_CONTRACT.md
+docs/12_AGENT_PROMPTS.md
+skills/skill_dashboard_engineer.md
 ```
 
 Rulebook 패턴 추가 시:

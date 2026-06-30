@@ -33,6 +33,26 @@ PROJECT_CHARTER.md
 4. 확률, 예측, 추천 기능은 validation gate 뒤로 보냅니다.
 5. 작업을 1~3일짜리 작은 이슈로 나눕니다.
 
+## 현재 우선순위
+
+```text
+P0 maintain:
+  Layer 1/2/3 dashboard, API contract, source freshness, rulebook explainability
+
+P1 next:
+  replay/validation harness
+  manual catalyst ledger integration
+  source registry config
+  official concentration source
+
+P2 deferred:
+  Stock Candidate Funnel
+  Macro overlay
+  KOSPI mode
+```
+
+현재 저장소는 bootstrap 단계가 끝났습니다. 새 작업을 `초기 구조 생성`으로 되돌리지 않습니다.
+
 ## 출력
 
 ```markdown

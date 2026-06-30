@@ -33,10 +33,12 @@ false_leadership_confirmed
 ```text
 sample_size
 median_forward_relative_return
-hit_rate
+diagnostic_hit_rate_optional
 max_drawdown_distribution
 coverage
 ```
+
+검증 출력은 Verification/Validation 전용 패널에만 표시합니다. Main Layer 1/2/3 판단 문구, sector card, ContextRail에는 확률·승률처럼 읽힐 수 있는 값을 넣지 않습니다.
 
 ## 금지
 
@@ -52,4 +54,5 @@ coverage
 [ ] pattern별 통계 출력 가능
 [ ] validation_status 필드 제공
 [ ] probability display gate 동작
+[ ] main dashboard copy remains probability-free
 ```

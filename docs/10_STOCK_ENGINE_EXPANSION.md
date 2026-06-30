@@ -1,4 +1,6 @@
-# 10. Stock Engine Expansion Roadmap
+# 10. Deferred Stock Engine Expansion Reference
+
+이 문서는 현재 구현 대상이 아니라 Sector Radar 검증 이후 참고할 확장 메모입니다. 현재 P0/P1 작업은 sector-level dashboard, source freshness, replay/validation, manual catalyst ledger입니다. Stock Candidate Funnel은 sector validation scaffolding 이후에만 진행합니다.
 
 ## 1. 왜 Sector 다음에 Stock인가
 

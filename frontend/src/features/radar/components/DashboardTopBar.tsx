@@ -111,7 +111,7 @@ function ViewSwitch({
   const views: Array<{ detail: string; id: RadarView; label: string }> = [
     { detail: "Layer 1", id: "layer1", label: "흐름" },
     { detail: "Layer 2", id: "layer2", label: "여력" },
-    { detail: "Layer 3", id: "leadership", label: "주도·섹터" },
+    { detail: "Layer 3", id: "leadership", label: "리더십" },
   ];
 
   return (

@@ -67,6 +67,7 @@ frontend/
     model.ts             # dashboard selectors and view helpers
     components/          # top bar, Layer 1/2, Layer 3 presentation components
   functions/api/         # Cloudflare Pages Function API
+  workers/ingest/        # scheduled Yahoo/FRED ingestion worker
   migrations/            # Cloudflare D1 migrations
 ```
 
@@ -193,7 +194,11 @@ React → Pages Function → Cloudflare D1
 
 ```text
 frontend/src/App.tsx
-  앱 상태, 데이터 로딩, 현재 화면 선택만 담당
+  앱 상태, 스냅샷 데이터 로딩, 현재 화면 선택, 선택 섹터 기준만 담당
+
+frontend/src/lib/dashboardSnapshot.ts
+  /api/sectors, /api/history, /api/validation을 병렬로 읽어 DashboardSnapshot을 구성
+  refresh 중에는 더 빠른 poll interval을 사용
 
 frontend/src/features/radar/model.ts
   정렬, 그룹핑, 패턴 클래스, 숫자 포맷 등 순수 helper
@@ -203,6 +208,34 @@ frontend/src/features/radar/components/
 
 frontend/src/types.ts
   docs/09_API_CONTRACT.md와 맞춰야 하는 JSON 타입
+```
+
+현재 화면 선택 규칙:
+
+```text
+Layer 1:
+  sortSectors = rulebook.strength desc, rs_ratio desc
+  현재 RS 리더와 warning/constructive 분포를 읽는다.
+
+Layer 2:
+  Layer 1과 별도 화면에서 participation, official market context, trigger watchlist를 읽는다.
+
+Layer 3:
+  기본 상세 선택은 Layer 1의 현재 RS 리더를 따른다.
+  좌측 레일은 sortSectorsByMomentum = rs_momentum desc, rs_ratio desc를 사용한다.
+  현재 RS 리더와 모멘텀 선두가 다르면 전환 관찰 신호로 표시한다.
+```
+
+수집원 표시 규칙:
+
+```text
+FreshnessBar:
+  activeView에 따라 source_freshness를 Layer 1/2/3로 scope한다.
+
+ContextRail:
+  Layer 1은 market tape/breadth/risk/validation,
+  Layer 2는 market context/participation/risk trigger/validation,
+  Layer 3는 RS 리더/순환 후보/reconciliation/validation을 표시한다.
 ```
 
 ## 9. 환경 설정

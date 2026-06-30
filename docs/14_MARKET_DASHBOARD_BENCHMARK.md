@@ -51,10 +51,11 @@ The following benchmark concepts have already been absorbed into the current arc
 | Trigger watchlist | system-generated `watchlist` rows in Layer 2 |
 | Context reconciliation | qualitative `context_reconciliation` banner |
 | History timeframe selector | `/api/history?timeframe=30D|90D|180D` |
+| Leadership flow separation | Layer 3 separates current RS leader from momentum leader candidates |
 
-## 4. High-Value Screens And Features To Add
+## 4. Implemented Screens And Remaining Upgrades
 
-### 4.1 Source Freshness Table
+### 4.1 Source Freshness Table — Implemented
 
 Benchmark signal:
 
@@ -64,11 +65,12 @@ Why it is useful:
 
 Users need to know whether an interpretation is based on current Yahoo prices, stale FRED macro data, missing KRX flow, or manual ledger values.
 
-Proposed UI:
+Current UI:
 
 ```text
-Top freshness chip -> opens Source Freshness drawer/table
-Layer 2 footer -> compact source freshness row
+Top freshness chip -> opens SourceFreshnessPanel
+ContextRail -> compact layer-specific status row
+FreshnessBar -> scopes rows by active Layer 1/2/3 tab
 ```
 
 Proposed fields:
@@ -86,12 +88,12 @@ Proposed fields:
 }
 ```
 
-Implementation plan:
+Implemented contract:
 
-1. Add `source_freshness` to `/api/sectors` or create `GET /api/source/freshness`.
-2. Build it from `series_daily`, `market_context_daily`, and `data_refresh_status`.
-3. Show rows grouped by active provider: Yahoo and FRED for the US Sector Radar MVP. Keep KRX/manual hidden unless an active card actually uses them.
-4. Mark stale with provider-specific cadence, not one global threshold.
+1. `source_freshness` is returned by `/api/sectors`.
+2. It is derived from `series_daily`, `market_context_daily`, and `data_refresh_status`.
+3. Rows are grouped by active provider and scoped by selected Layer.
+4. Staleness uses provider-specific cadence.
 
 Definition of done:
 
@@ -101,7 +103,7 @@ Missing FRED data appears as unavailable, not as zero or neutral.
 KRX-only candidates stay out of active US Sector Radar until a directly useful source is connected.
 ```
 
-### 4.2 Trigger Watchlist
+### 4.2 Trigger Watchlist — Implemented
 
 Benchmark signal:
 
@@ -111,7 +113,7 @@ Why it is useful:
 
 Sector Radar needs invalidation and risk monitoring beyond the current snapshot. A watchlist turns Layer 2 into actionable research monitoring without becoming trading advice.
 
-Proposed UI:
+Current UI:
 
 ```text
 Layer 2 -> Trigger Watchlist panel
@@ -129,12 +131,12 @@ Initial watchlist items:
 | KRX foreign flow | sustained net selling | deferred reference gate | excluded from active watchlist until a licensed or KRX investor-flow source is connected |
 | Manual catalyst | reversal or invalidation | rulebook downgrade | manual ledger |
 
-Implementation plan:
+Implemented contract:
 
-1. Add `watchlist_events` reader to Pages API.
-2. Generate system watchlist rows from latest market context plus static rule definitions.
-3. Later merge manual catalyst ledger rows only after the ledger is connected and freshness is trackable.
-4. Keep statuses qualitative: `quiet`, `fired`, `unknown`, `manual_check`.
+1. `/api/sectors.watchlist` exposes system-generated rows.
+2. Rows are generated from latest market context, breadth, concentration, and static rule definitions.
+3. Manual catalyst ledger rows remain deferred until freshness is trackable.
+4. Statuses remain qualitative: `quiet`, `fired`, `unknown`, `manual_check`.
 
 Definition of done:
 
@@ -143,7 +145,7 @@ No watchlist row uses probability or recommendation language.
 Every fired trigger explains why it matters and what would invalidate it.
 ```
 
-### 4.3 Context Reconciliation
+### 4.3 Context Reconciliation — Implemented
 
 Benchmark signal:
 
@@ -153,11 +155,15 @@ Why it is useful:
 
 The most valuable signal is often disagreement: sector leadership is strong while credit/fx/freshness deteriorates, or leadership is weak while liquidity improves.
 
-Proposed UI:
+Current UI:
 
 ```text
-ContextRail second line or Layer 1 side panel:
-Market Context -> Sector Leadership -> Validation
+ContextRail:
+Layer 1/2/3 scoped status segments
+
+Layer 1:
+Flow judgement and reconciliation copy
+
 Alignment: supportive / divergent / risk rising / data insufficient
 ```
 
@@ -177,12 +183,11 @@ Expected return
 Target band
 ```
 
-Implementation plan:
+Implemented contract:
 
-1. Create a reconciliation rulebook that reads market context cards, breadth, participation, and concentration.
-2. Output `state`, `transition`, `evidence`, `warnings`, not a score.
-3. Add `context_reconciliation` to `/api/sectors`.
-4. Render a compact alignment banner.
+1. `context_reconciliation` is returned by `/api/sectors`.
+2. It outputs `state`, `transition`, `evidence`, `warnings`, not a score.
+3. It is rendered in ContextRail and Layer 1 interpretation.
 
 Definition of done:
 
@@ -381,11 +386,16 @@ Tasks:
 
 Status: implemented as a derived `/api/sectors` field and expandable UI panel.
 
-Tasks:
+Implemented:
 
-1. Add `source_freshness` response shape.
-2. Compute freshness from `series_daily`, `market_context_daily`, and `data_refresh_status`.
-3. Add a compact drawer/table UI.
+1. `source_freshness` response shape.
+2. Freshness derived from `series_daily`, `market_context_daily`, and `data_refresh_status`.
+3. Compact expandable `SourceFreshnessPanel` and layer-scoped `FreshnessBar`.
+
+Remaining upgrades:
+
+1. Move provider cadence and source labels into a source registry config.
+2. Add active rows only when new adapters are connected and freshness is trackable.
 
 Tests:
 
@@ -399,11 +409,15 @@ Fresh Yahoo price rows -> Yahoo rows live.
 
 Status: implemented as system-generated rows from latest market context, breadth, concentration, and manual placeholders.
 
-Tasks:
+Implemented:
 
-1. Add system-generated watchlist rows from latest context.
-2. Merge manual catalyst ledger rows later, but keep them out of active triggers while the ledger is not connected.
-3. Render in Layer 2.
+1. System-generated watchlist rows from latest context, breadth, concentration, and static trigger definitions.
+2. Layer 2 rendering.
+
+Remaining upgrades:
+
+1. Merge manual catalyst ledger rows later, but keep them out of active triggers while the ledger is not connected.
+2. Persist fired trigger history in `watchlist_events`.
 
 Tests:
 
@@ -417,11 +431,14 @@ Breadth narrowing while RS leading -> narrow leadership warning.
 
 Status: implemented as qualitative state/transition/evidence/warnings and rendered in ContextRail plus Layer 1.
 
-Tasks:
+Implemented:
 
-1. Add reconciliation rulebook.
-2. Output qualitative state and warnings.
-3. Render alignment banner in Layer 1 or ContextRail.
+1. Qualitative reconciliation output.
+2. ContextRail and Layer 1 rendering.
+
+Remaining upgrades:
+
+1. Expand reconciliation rulebook test coverage as new source adapters land.
 
 Tests:
 

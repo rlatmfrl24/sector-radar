@@ -1,4 +1,4 @@
-import { Database } from "lucide-react";
+import { ArrowRight, Database } from "lucide-react";
 
 import type { HistoryResponse, HistoryTimeframe, SectorSnapshot, ValidationResponse } from "../../../types";
 import {
@@ -19,8 +19,10 @@ const RRG_X_SCALE = 4.8;
 const RRG_Y_SCALE = 7.4;
 
 export function LayerThreeLeadership({
+  currentLeader,
   history,
   historyTimeframe,
+  momentumLeader,
   onSelect,
   onHistoryTimeframeChange,
   sectors,
@@ -29,8 +31,10 @@ export function LayerThreeLeadership({
   validation,
   warnings,
 }: {
+  currentLeader?: SectorSnapshot;
   history: HistoryResponse | null;
   historyTimeframe: HistoryTimeframe;
+  momentumLeader?: SectorSnapshot;
   onSelect: (sectorCode: string) => void;
   onHistoryTimeframeChange: (timeframe: HistoryTimeframe) => void;
   sectors: SectorSnapshot[];
@@ -42,14 +46,16 @@ export function LayerThreeLeadership({
   return (
     <section className="layer-section layer-three" aria-label="layer three leadership">
       <LayerHeader
-        description="최근 상대 흐름이 좋아지는 섹터를 먼저 찾고, 순환매 위치와 판정 품질을 함께 확인합니다."
+        description="Layer 1의 현재 RS 리더를 상세로 열고, 모멘텀 선두는 회전 후보 신호로 분리해 확인합니다."
         eyebrow="Layer 3"
         meta={`${sectors.length} sector snapshots`}
-        title="모멘텀 (섹터)"
+        title="리더십 상세"
       />
       <TimeframeSelector active={historyTimeframe} history={history} onChange={onHistoryTimeframeChange} />
+      <LeadershipFlowStrip currentLeader={currentLeader} momentumLeader={momentumLeader} selected={selected} />
       <section className="leadership-workspace" aria-label="leadership dashboard">
         <SectorRail
+          momentumLeader={momentumLeader}
           onSelect={onSelect}
           sectors={sectors}
           selectedCode={selectedCode}
@@ -66,9 +72,53 @@ export function LayerThreeLeadership({
           </div>
           <SectorTreemap onSelect={onSelect} sectors={sectors} selectedCode={selectedCode} />
         </section>
-        <SelectedSectorPanel sector={selected} validation={validation} />
+        <SelectedSectorPanel
+          currentLeader={currentLeader}
+          momentumLeader={momentumLeader}
+          sector={selected}
+          validation={validation}
+        />
       </section>
     </section>
+  );
+}
+
+function LeadershipFlowStrip({
+  currentLeader,
+  momentumLeader,
+  selected,
+}: {
+  currentLeader?: SectorSnapshot;
+  momentumLeader?: SectorSnapshot;
+  selected: SectorSnapshot;
+}) {
+  const sameLeader =
+    Boolean(currentLeader && momentumLeader && currentLeader.sector_code === momentumLeader.sector_code);
+  const message = sameLeader
+    ? "현재 RS 리더와 모멘텀 선두가 일치합니다."
+    : "기존 리더와 모멘텀 선두가 달라 전환 관찰 구간입니다.";
+  const selectedText = `${selected.sector_code} 기준으로 현재 리더 상태와 약화 여부를 보여줍니다.`;
+
+  return (
+    <div className="leadership-flow-strip" aria-label="leadership flow alignment">
+      <LeadershipFlowNode label="현재 RS 리더" sector={currentLeader} />
+      <ArrowRight aria-hidden="true" size={16} />
+      <LeadershipFlowNode label="모멘텀 선두" sector={momentumLeader} />
+      <div className="leadership-flow-note">
+        <strong>{message}</strong>
+        <span>{selectedText}</span>
+      </div>
+    </div>
+  );
+}
+
+function LeadershipFlowNode({ label, sector }: { label: string; sector?: SectorSnapshot }) {
+  return (
+    <div className="leadership-flow-node">
+      <span>{label}</span>
+      <strong>{sector?.sector_code ?? "N/A"}</strong>
+      <em>{sector ? sectorRoleSummary(sector) : "pending"}</em>
+    </div>
   );
 }
 
@@ -123,11 +173,13 @@ function TimeframeSelector({
 }
 
 function SectorRail({
+  momentumLeader,
   onSelect,
   sectors,
   selectedCode,
   warnings,
 }: {
+  momentumLeader?: SectorSnapshot;
   onSelect: (sectorCode: string) => void;
   sectors: SectorSnapshot[];
   selectedCode: string;
@@ -135,7 +187,11 @@ function SectorRail({
 }) {
   return (
     <aside className="sector-rail" aria-label="sector selector">
-      <PanelHeader eyebrow="Momentum" title="좋은 모멘텀 섹터" meta={`${warnings.length} warnings`} />
+      <PanelHeader
+        eyebrow="Momentum"
+        title="모멘텀 선두 후보"
+        meta={`${momentumLeader?.sector_code ?? "N/A"} lead · ${warnings.length} warnings`}
+      />
       <div className="sector-list">
         {sectors.map((sector, index) => {
           const rsRatio = numberMetric(sector.modules.relative_strength.evidence.rs_ratio, 100);
@@ -154,7 +210,7 @@ function SectorRail({
               <span className="sector-row-main">
                 <strong>{sector.sector_name}</strong>
                 <em>
-                  {sector.sector_code} · 상대강도 {rsRatio.toFixed(1)} · {sector.rulebook.lead_pattern}
+                  {sector.sector_code} · {quadrantLabels[sector.quadrant]} · {sector.rulebook.lead_pattern}
                 </em>
               </span>
               <span className="sector-row-rs" aria-label={`모멘텀 ${rsMomentum.toFixed(1)}`}>
@@ -443,16 +499,21 @@ function SectorTreemap({
 }
 
 function SelectedSectorPanel({
+  currentLeader,
+  momentumLeader,
   sector,
   validation,
 }: {
+  currentLeader?: SectorSnapshot;
+  momentumLeader?: SectorSnapshot;
   sector: SectorSnapshot;
   validation: ValidationResponse | null;
 }) {
   const rrgWindows = multiWindowRrg(sector);
+  const role = selectedSectorRole(sector, currentLeader, momentumLeader);
   return (
     <aside className="selected-panel" aria-label="selected sector details">
-      <PanelHeader eyebrow="Selected Sector" title={sector.sector_name} meta={sector.sector_code} />
+      <PanelHeader eyebrow={role.eyebrow} title={sector.sector_name} meta={sector.sector_code} />
 
       <div className="selected-summary">
         <div className={`quadrant-token ${sector.quadrant}`}>{quadrantLabels[sector.quadrant]}</div>
@@ -460,6 +521,7 @@ function SelectedSectorPanel({
         <span>
           {directionLabel(sector)} · {sector.rulebook.conviction_label}
         </span>
+        <span className="selection-context">{role.detail}</span>
       </div>
 
       <div className="metric-pair">
@@ -514,6 +576,46 @@ function multiWindowRrg(sector: SectorSnapshot) {
     label,
     quadrant: String(evidence[`rrg_${label}_quadrant`] ?? "unknown"),
   }));
+}
+
+function sectorRoleSummary(sector: SectorSnapshot) {
+  const rsMomentum = numberMetric(sector.modules.relative_strength.evidence.rs_momentum, 100);
+  return `${sector.rulebook.lead_pattern} · ${quadrantLabels[sector.quadrant]} · M ${rsMomentum.toFixed(1)}`;
+}
+
+function selectedSectorRole(
+  sector: SectorSnapshot,
+  currentLeader?: SectorSnapshot,
+  momentumLeader?: SectorSnapshot,
+) {
+  const isCurrentLeader = sector.sector_code === currentLeader?.sector_code;
+  const isMomentumLeader = sector.sector_code === momentumLeader?.sector_code;
+
+  if (isCurrentLeader && isMomentumLeader) {
+    return {
+      detail: "현재 RS 리더와 모멘텀 선두가 같은 섹터입니다.",
+      eyebrow: "현재 리더 = 모멘텀 선두",
+    };
+  }
+
+  if (isCurrentLeader) {
+    return {
+      detail: `Layer 1의 현재 RS 리더입니다. 모멘텀 선두는 ${momentumLeader?.sector_code ?? "N/A"}로 분리됩니다.`,
+      eyebrow: "현재 RS 리더",
+    };
+  }
+
+  if (isMomentumLeader) {
+    return {
+      detail: `모멘텀 선두입니다. 현재 RS 리더는 ${currentLeader?.sector_code ?? "N/A"}입니다.`,
+      eyebrow: "모멘텀 선두",
+    };
+  }
+
+  return {
+    detail: `현재 RS 리더 ${currentLeader?.sector_code ?? "N/A"}, 모멘텀 선두 ${momentumLeader?.sector_code ?? "N/A"}와 비교 중입니다.`,
+    eyebrow: "비교 섹터",
+  };
 }
 
 function validationStatusLabel(status: string) {

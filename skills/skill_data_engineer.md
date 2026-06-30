@@ -12,9 +12,12 @@ description: Use this skill for SQLite schema, idempotent ingestion, provider ad
 ## 담당 범위
 
 - SQLite DDL
+- Cloudflare D1 migration compatibility
 - upsert 함수
 - provider adapter interface
 - data freshness
+- `source_freshness`, `data_refresh_status`, `run_log`
+- Scheduled Worker ingestion boundary
 - config loader
 - manual catalyst ledger loader
 
@@ -28,15 +31,14 @@ source와 fetched_at 기록
 unit test에서 network call 금지
 ```
 
-## 구현 순서
+## 현재 유지 순서
 
-1. `init_db()`
-2. `upsert_series_daily()`
-3. `get_latest_date()`
-4. `query_series()`
-5. `upsert_sector_metrics()`
-6. `get_data_freshness()`
-7. temporary SQLite DB 기반 테스트
+1. SQLite schema와 D1 migration이 같은 계약을 유지하는지 확인
+2. `series_daily` long-format upsert idempotency 유지
+3. `sector_metrics_daily` snapshot upsert와 latest query 유지
+4. `market_context_daily`, `data_refresh_status`, `run_log` freshness 흐름 유지
+5. Layer 1/2/3 source freshness scope가 깨지지 않는지 확인
+6. temporary SQLite DB 또는 D1 mock 기반 테스트
 
 ## Edge Cases
 
@@ -54,6 +56,8 @@ unit test에서 network call 금지
 [ ] latest date query works
 [ ] lookback query returns sorted rows
 [ ] WAL mode enabled
+[ ] D1 Pages/Worker contract remains compatible
+[ ] source freshness includes provider, source_class, cadence, latest date, stale status
 ```
 
 ## 금지

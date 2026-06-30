@@ -182,6 +182,28 @@ POST /api/refresh
 
 `POST /api/refresh` is intentionally disabled on public Cloudflare Pages. It returns `refresh_unavailable_in_pages` because the Scheduled Worker owns Cloudflare refresh and enforces the upstream refresh gate.
 
+Production UI smoke-check expectations:
+
+```text
+Top tabs:
+  흐름 / Layer 1
+  여력 / Layer 2
+  리더십 / Layer 3
+
+Layer 1:
+  Shows market tape, breadth quality, risk/vol, flow judgement.
+  Freshness panel is scoped to Layer 1 helper series such as SPY, QQQ, RSP, IWM, ^VIX.
+
+Layer 2:
+  Shows ETF participation, official FRED market context, and risk trigger watchlist.
+  Freshness panel is scoped to Yahoo sector prices and FRED/context rows, not Layer 1 tape rows.
+
+Layer 3:
+  Shows current RS leader and momentum leader as separate concepts.
+  Default selected inspector follows the Layer 1 current RS leader.
+  Momentum rail remains sorted by RS Momentum so the rail leader can differ from the selected inspector.
+```
+
 ## 6. Scheduled Research Ingestion
 
 The deployable ingestion path is a separate Worker:

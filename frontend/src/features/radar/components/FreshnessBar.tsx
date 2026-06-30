@@ -395,10 +395,10 @@ function contextRailItems(
 
   return {
     items: [
-      { icon: "database" as const, label: "Sector Leadership", value: `${concentration?.top1 ?? data.sectors[0]?.sector_code ?? "N/A"} lead` },
+      { icon: "database" as const, label: "RS 리더", value: `${concentration?.top1 ?? data.sectors[0]?.sector_code ?? "N/A"} lead` },
       {
         icon: "activity" as const,
-        label: "Constructive",
+        label: "순환 후보",
         value: `${data.sectors.filter((sector) => sector.quadrant === "leading" || sector.quadrant === "improving").length}/${data.sectors.length}`,
       },
       { icon: "activity" as const, label: "Reconciliation", value: reconciliation ? reconciliationLabel(reconciliation.state) : "pending" },
