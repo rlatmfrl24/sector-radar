@@ -27,30 +27,39 @@ interface MarketContextRow {
   computed_at: string | null;
 }
 
+const ACTIVE_MARKET_CONTEXT_CODES = ["S01", "S02", "S03", "S05"] as const;
+
 export async function readLatestMarketContext(env: Env, market = "US") {
   try {
     const rows = await env.DB.prepare(
       `
-        SELECT context.*
-        FROM market_context_daily context
-        WHERE context.market = ?
-          AND NOT EXISTS (
-            SELECT 1
-            FROM market_context_daily newer
-            WHERE newer.market = context.market
-              AND newer.context_code = context.context_code
-              AND (
-                newer.computed_at > context.computed_at
-                OR (
-                  newer.computed_at = context.computed_at
-                  AND newer.date > context.date
-                )
-              )
+        WITH ranked_context AS (
+          SELECT
+            context.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY context.context_code
+              ORDER BY
+                CASE context.source_class
+                  WHEN 'official' THEN 1
+                  WHEN 'proxy' THEN 2
+                  WHEN 'manual' THEN 3
+                  ELSE 4
+                END,
+                context.date DESC,
+                context.computed_at DESC
+            ) AS source_rank
+          FROM market_context_daily context
+          WHERE context.market = ?
+            AND context.context_code IN (?, ?, ?, ?)
+            AND context.source_class = 'official'
           )
-        ORDER BY context.context_code
+        SELECT *
+        FROM ranked_context
+        WHERE source_rank = 1
+        ORDER BY context_code
       `,
     )
-      .bind(market)
+      .bind(market, ...ACTIVE_MARKET_CONTEXT_CODES)
       .all<MarketContextRow>();
 
     return (rows.results ?? []).map((row) => ({

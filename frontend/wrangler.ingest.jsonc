@@ -19,6 +19,7 @@
     "YAHOO_HOLDINGS_FETCH_BUDGET": "38",
     "YAHOO_FETCH_CONCURRENCY": "2",
     "FRED_REFRESH_INTERVAL_MINUTES": "720",
+    "ENABLE_KRX_CONTEXT_REFRESH": "false",
     "KRX_REFRESH_INTERVAL_MINUTES": "1440",
     "KRX_CONTEXT_ENDPOINT": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd,https://data-dbg.krx.co.kr/svc/apis/sto/ksq_bydd_trd"
   },

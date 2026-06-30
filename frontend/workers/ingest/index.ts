@@ -20,7 +20,7 @@ export default {
 
   async fetch(_request: Request, env: Env): Promise<Response> {
     const store = new D1RefreshStore(env.DB);
-    const statuses = await store.readStatuses(["yahoo_finance", "fred", "krx_openapi"]);
+    const statuses = await store.readStatuses(activeStatusProviders(env));
     return Response.json({
       service: "sector-radar-ingest",
       providers: Object.fromEntries(
@@ -65,17 +65,19 @@ async function runRefresh(env: Env, now: Date): Promise<void> {
       now,
     },
   );
-  const krxOutcome = await refreshKrxMarketContext(
-    store,
-    new KrxOpenApiProvider({
-      apiKey: readOptionalEnv(env, "KRX_API_KEY"),
-      endpoint: readOptionalEnv(env, "KRX_CONTEXT_ENDPOINT"),
-    }),
-    {
-      krxIntervalMinutes: parseNumber(readOptionalEnv(env, "KRX_REFRESH_INTERVAL_MINUTES"), 1440),
-      now,
-    },
-  );
+  const krxOutcome = parseBoolean(readOptionalEnv(env, "ENABLE_KRX_CONTEXT_REFRESH"))
+    ? await refreshKrxMarketContext(
+        store,
+        new KrxOpenApiProvider({
+          apiKey: readOptionalEnv(env, "KRX_API_KEY"),
+          endpoint: readOptionalEnv(env, "KRX_CONTEXT_ENDPOINT"),
+        }),
+        {
+          krxIntervalMinutes: parseNumber(readOptionalEnv(env, "KRX_REFRESH_INTERVAL_MINUTES"), 1440),
+          now,
+        },
+      )
+    : "disabled";
 
   console.log(
     JSON.stringify({
@@ -87,6 +89,12 @@ async function runRefresh(env: Env, now: Date): Promise<void> {
       },
     }),
   );
+}
+
+function activeStatusProviders(env: Env): string[] {
+  return parseBoolean(readOptionalEnv(env, "ENABLE_KRX_CONTEXT_REFRESH"))
+    ? ["yahoo_finance", "fred", "krx_openapi"]
+    : ["yahoo_finance", "fred"];
 }
 
 function parseRefreshInterval(value: string | undefined): number {

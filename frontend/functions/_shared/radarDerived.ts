@@ -3,6 +3,9 @@ export type SourceProvider = "yahoo_finance" | "fred" | "krx_openapi" | "manual"
 export type FreshnessFrequency = "intraday_gate" | "daily" | "weekly" | "manual" | "unknown";
 export type FreshnessStatus = "live" | "stale" | "unavailable" | "manual_check";
 export type TriggerStatus = "quiet" | "fired" | "unknown" | "manual_check";
+export type SourceExpansionLayer = "layer1" | "layer2";
+export type SourceExpansionKind = "official" | "price" | "supplemental" | "manual" | "held";
+export type SourceExpansionStatus = "active" | "candidate" | "deferred";
 export type ReconciliationState =
   | "supportive"
   | "divergent"
@@ -87,6 +90,23 @@ export interface SourceFreshnessItem {
   warning?: string;
 }
 
+export interface SourceExpansionItem {
+  id: string;
+  layer: SourceExpansionLayer;
+  area: string;
+  label: string;
+  provider: SourceProvider | "cboe" | "sec_edgar" | "treasury_fiscaldata" | "finra";
+  route: string;
+  source_kind: SourceExpansionKind;
+  status: SourceExpansionStatus;
+  cadence: string;
+  purpose: string;
+  current_signal: string;
+  next_step: string;
+  latest_date?: string;
+  warning?: string;
+}
+
 export interface TriggerWatchlistItem {
   id: string;
   label: string;
@@ -118,14 +138,213 @@ export interface RadarDerivedInput {
 
 export function buildRadarDerived(input: RadarDerivedInput) {
   const source_freshness = buildSourceFreshness(input);
+  const source_expansion = buildSourceExpansion(input);
   const watchlist = buildTriggerWatchlist(input);
   const context_reconciliation = buildContextReconciliation(input, watchlist);
 
   return {
     source_freshness,
+    source_expansion,
     watchlist,
     context_reconciliation,
   };
+}
+
+export function buildSourceExpansion({
+  dataConnection,
+  dataConnections,
+  marketContext,
+}: RadarDerivedInput): SourceExpansionItem[] {
+  const connections: DataConnectionsLike = {
+    yahoo_finance: dataConnection,
+    ...dataConnections,
+  };
+  const byCode = new Map(marketContext.map((card) => [card.code, card]));
+  const yahooLatest = connections.yahoo_finance?.latest_price_date;
+  const fredLatest = connections.fred?.latest_price_date;
+
+  return [
+    {
+      id: "l1_market_tape",
+      layer: "layer1",
+      area: "Market tape",
+      label: "SPY·섹터 ETF 가격",
+      provider: "yahoo_finance",
+      route: "Yahoo chart adapter",
+      source_kind: "price",
+      status: "active",
+      cadence: "15분 gate / 장마감 기준",
+      purpose: "SPY tape, 섹터 ETF RRG, participation 계산의 기본 가격 입력",
+      current_signal: "현재 Layer 1과 Layer 3의 가격·RS 계산에 사용 중입니다.",
+      next_step: "공개/상업 배포 전 licensed market-data provider로 교체 가능한 adapter 유지",
+      latest_date: yahooLatest,
+    },
+    {
+      id: "l1_risk_vol",
+      layer: "layer1",
+      area: "Risk / Vol",
+      label: "VIX 공식 변동성",
+      provider: "fred",
+      route: "FRED VIXCLS / Cboe VIX history",
+      source_kind: "official",
+      status: contextStatus(byCode.get("S03"), "VIXCLS_latest") === "active" ? "active" : "candidate",
+      cadence: "일간",
+      purpose: "Yahoo ^VIX 보조 지표를 FRED/Cboe 공식 변동성으로 보강",
+      current_signal: "Layer 1 risk/vol 해석과 Layer 2 신용환경 카드에 연결됩니다.",
+      next_step: "FRED VIXCLS를 우선 사용하고, Cboe 직접 데이터는 fallback 후보로 분리",
+      latest_date: byCode.get("S03")?.data_freshness.latest_date as string | undefined,
+    },
+    {
+      id: "l1_breadth_helpers",
+      layer: "layer1",
+      area: "Breadth helpers",
+      label: "RSP·IWM·QQQ 상대성과",
+      provider: "yahoo_finance",
+      route: "Yahoo chart adapter",
+      source_kind: "supplemental",
+      status: "active",
+      cadence: "15분 gate / 장마감 기준",
+      purpose: "동일가중, 소형주, 성장주 흐름으로 시장 폭을 보조 확인",
+      current_signal: "Layer 1의 Breadth 보조지표와 최종 narrative에 사용 중입니다.",
+      next_step: "ETF 구성종목 breadth가 충분히 쌓이면 보조 비중을 낮춤",
+      latest_date: yahooLatest,
+      warning: "가격 기반 보조 지표이며 구성종목 원천 breadth는 아닙니다.",
+    },
+    {
+      id: "l1_holdings_breadth",
+      layer: "layer1",
+      area: "ETF holdings breadth",
+      label: "ETF 구성종목 breadth",
+      provider: "sec_edgar",
+      route: "Issuer holdings / SEC N-PORT fallback",
+      source_kind: "official",
+      status: "candidate",
+      cadence: "일간 issuer / 월간 SEC 지연",
+      purpose: "대표 보유종목 coverage와 breadth 품질 개선",
+      current_signal: "현재는 representative holdings shard와 가격 이력으로 점진 계산합니다.",
+      next_step: "ETF issuer holdings 약관 확인 후 우선 adapter 추가, SEC는 지연 fallback으로 유지",
+      warning: "SEC N-PORT는 지연 데이터라 당일 breadth에는 부적합합니다.",
+    },
+    {
+      id: "l1_concentration",
+      layer: "layer1",
+      area: "Leadership concentration",
+      label: "시가총액 기여도",
+      provider: "sec_edgar",
+      route: "ETF holdings weights / licensed constituent market cap",
+      source_kind: "official",
+      status: "candidate",
+      cadence: "일간/주간",
+      purpose: "현재 RS 기반 집중도 추정을 실제 market-cap contribution으로 교체",
+      current_signal: "현재는 rs_leadership_estimate로 리더십 집중도를 보조 추정합니다.",
+      next_step: "섹터 ETF holding weight와 종목 시가총액 원천을 분리해 수집",
+    },
+    {
+      id: "l2_policy",
+      layer: "layer2",
+      area: "S01 central bank policy",
+      label: "WALCL·정책금리·실질금리",
+      provider: "fred",
+      route: "FRED WALCL, DFF/SOFR, DGS2, DFII5",
+      source_kind: "official",
+      status: contextStatus(byCode.get("S01")),
+      cadence: "일간/주간",
+      purpose: "중앙은행 유동성 및 금리 압박 판단",
+      current_signal: byCode.get("S01")?.meaning ?? "Layer 2 중앙은행 정책 카드에 연결됩니다.",
+      next_step: "SOFR 보강 및 weekly 시리즈 갱신 지연 안내 고도화",
+      latest_date: contextLatest(byCode.get("S01")) ?? fredLatest,
+    },
+    {
+      id: "l2_fx",
+      layer: "layer2",
+      area: "S02 dollar / FX",
+      label: "DEXKOUS·DTWEXBGS",
+      provider: "fred",
+      route: "FRED DEXKOUS, DTWEXBGS",
+      source_kind: "official",
+      status: contextStatus(byCode.get("S02")),
+      cadence: "일간",
+      purpose: "달러·원화·광의 달러 압박 확인",
+      current_signal: byCode.get("S02")?.meaning ?? "Layer 2 달러·FX 게이트에 연결됩니다.",
+      next_step: "intraday FX가 필요해지면 licensed FX provider를 별도 adapter로 추가",
+      latest_date: contextLatest(byCode.get("S02")) ?? fredLatest,
+    },
+    {
+      id: "l2_credit_vol",
+      layer: "layer2",
+      area: "S03 credit / volatility",
+      label: "HY OAS·VIXCLS",
+      provider: "fred",
+      route: "FRED BAMLH0A0HYM2, VIXCLS",
+      source_kind: "official",
+      status: contextStatus(byCode.get("S03")),
+      cadence: "일간",
+      purpose: "신용 스프레드와 변동성 압박 확인",
+      current_signal: byCode.get("S03")?.meaning ?? "Layer 2 글로벌 신용환경 카드에 연결됩니다.",
+      next_step: "Cboe VIX 직접 원천 fallback 가능성 검토",
+      latest_date: contextLatest(byCode.get("S03")) ?? fredLatest,
+    },
+    {
+      id: "l2_reserves",
+      layer: "layer2",
+      area: "S05 cash / reserves",
+      label: "은행 지급준비금",
+      provider: "fred",
+      route: "FRED WRESBAL",
+      source_kind: "official",
+      status: contextStatus(byCode.get("S05")),
+      cadence: "주간",
+      purpose: "현금성 여력과 유동성 완화/압박 확인",
+      current_signal: byCode.get("S05")?.meaning ?? "Layer 2 예비금·현금 카드에 연결됩니다.",
+      next_step: "Treasury Fiscal Data의 TGA/운영현금 항목으로 보강",
+      latest_date: contextLatest(byCode.get("S05")) ?? fredLatest,
+      warning: "WRESBAL은 MMF 총자산이 아니라 은행 지급준비금입니다.",
+    },
+    {
+      id: "l2_treasury_dts",
+      layer: "layer2",
+      area: "Treasury liquidity",
+      label: "TGA·Daily Treasury Statement",
+      provider: "treasury_fiscaldata",
+      route: "U.S. Treasury Fiscal Data API",
+      source_kind: "official",
+      status: "candidate",
+      cadence: "일간",
+      purpose: "재무부 현금잔고와 유동성 흡수/공급 보강",
+      current_signal: "현재 S05 은행 지급준비금 해석의 다음 보강 후보입니다.",
+      next_step: "Daily Treasury Statement endpoint schema를 고정하고 D1 series_daily 매핑 추가",
+    },
+    {
+      id: "l2_margin_leverage",
+      layer: "layer2",
+      area: "Margin leverage",
+      label: "FINRA margin statistics",
+      provider: "finra",
+      route: "FINRA margin statistics",
+      source_kind: "official",
+      status: "candidate",
+      cadence: "월간",
+      purpose: "시장 레버리지 과열과 반대매매 위험을 느린 지표로 확인",
+      current_signal: "현재 active Layer 2에는 넣지 않고 리스크 트리거 후보로만 둡니다.",
+      next_step: "월간 지표 특성상 경고등이 아니라 context note로 표시",
+      warning: "월간 발표라 단기 리스크 트리거로 쓰면 안 됩니다.",
+    },
+    {
+      id: "l2_krx_flow",
+      layer: "layer2",
+      area: "KRX reference",
+      label: "KRX 수급·신용 참고",
+      provider: "krx_openapi",
+      route: "KRX OpenAPI",
+      source_kind: "official",
+      status: "deferred",
+      cadence: "KST 일간",
+      purpose: "KOSPI 확장 시 외국인 자금과 신용·공매도 참고",
+      current_signal: "US Sector Radar의 핵심 입력에서는 제외했습니다.",
+      next_step: "KOSPI 모드 또는 별도 Korea market rail에서만 활성화",
+      warning: "미국 섹터 판단을 중립처럼 오염시키지 않기 위해 보류합니다.",
+    },
+  ];
 }
 
 export function buildSourceFreshness({
@@ -139,11 +358,14 @@ export function buildSourceFreshness({
     yahoo_finance: dataConnection,
     ...dataConnections,
   };
+  const hasKrxContext = marketContext.some((card) => providerForContext(card) === "krx_openapi");
 
   const providerRows: SourceFreshnessItem[] = [
     providerFreshness("provider:yahoo_finance", "Yahoo sector prices", "yahoo_finance", connections.yahoo_finance, "proxy", "intraday_gate", now),
     providerFreshness("provider:fred", "FRED macro series", "fred", connections.fred, "official", "daily", now),
-    providerFreshness("provider:krx_openapi", "KRX reference flow", "krx_openapi", connections.krx_openapi, "official", "daily", now),
+    ...(hasKrxContext
+      ? [providerFreshness("provider:krx_openapi", "KRX reference flow", "krx_openapi", connections.krx_openapi, "official", "daily", now)]
+      : []),
   ];
 
   const contextRows = marketContext.map((card) => {
@@ -242,9 +464,9 @@ export function buildTriggerWatchlist({
     {
       id: "concentration_proxy",
       label: "Leadership concentration",
-      trigger: "HHI or top3 concentration proxy rises",
+      trigger: "HHI or top3 concentration rises",
       meaning: "리더십이 넓게 확산되는지, 특정 섹터에 몰리는지 확인합니다.",
-      status: concentration.hhi === null ? "unknown" : concentration.warnings.includes("narrow_leadership_proxy") ? "fired" : "quiet",
+      status: concentration.hhi === null ? "unknown" : concentration.warnings.includes("narrow_leadership_estimate") ? "fired" : "quiet",
       source_class: (concentration.source_class === "official" ? "official" : "proxy") as SourceClass,
       evidence: {
         hhi: concentration.hhi,
@@ -277,7 +499,7 @@ export function buildContextReconciliation(
   const leadershipConstructive =
     sectors.length > 0 && (constructiveCount >= Math.ceil(sectors.length / 2) || strongLeader);
   const weakLeadership = sectors.length > 0 && laggingCount >= Math.ceil(sectors.length / 2) && !strongLeader;
-  const narrowLeadership = concentration.warnings.includes("narrow_leadership_proxy");
+  const narrowLeadership = concentration.warnings.includes("narrow_leadership_estimate");
   const riskContext = pressureCards.length > 0 || firedRiskTriggers.length > 0 || narrowLeadership;
 
   if (activeContext.length < 3) {
@@ -326,7 +548,7 @@ export function buildContextReconciliation(
       transition: supportiveCards.length >= pressureCards.length ? "strengthening" : "stable",
       narrative: "섹터 리더십과 Layer 2 맥락이 크게 충돌하지 않아 현재 흐름은 리서치 관점에서 정합적입니다.",
       evidence: baseReconciliationEvidence(constructiveCount, pressureCards, supportiveCards, concentration),
-      warnings: concentration.source_class === "proxy" ? ["concentration_is_proxy"] : [],
+      warnings: concentration.source_class === "proxy" ? ["concentration_is_supplemental_estimate"] : [],
     };
   }
 
@@ -368,6 +590,18 @@ function providerFreshness(
     status,
     warning: connection?.message ?? warningForStatus(status, sourceClass),
   };
+}
+
+function contextStatus(card: MarketContextLike | undefined, evidenceKey?: string): SourceExpansionStatus {
+  if (!card) return "candidate";
+  if (card.source_class === "held" || card.state === "held") return "deferred";
+  if (card.source_class === "manual") return "candidate";
+  if (evidenceKey && !Object.prototype.hasOwnProperty.call(card.evidence, evidenceKey)) return "candidate";
+  return "active";
+}
+
+function contextLatest(card: MarketContextLike | undefined) {
+  return card ? freshnessDate(card.data_freshness) ?? stringValue(card.evidence.latest_date) : undefined;
 }
 
 function contextTrigger({
@@ -485,7 +719,7 @@ function parseDateOnly(value: string) {
 
 function providerForContext(card: MarketContextLike): SourceProvider {
   if (card.source_class === "manual") return "manual";
-  if (card.source_class === "held") return card.code === "S04" || card.code === "S06" ? "krx_openapi" : "unknown";
+  if (card.source_class === "held") return "unknown";
   if (card.source_class === "proxy") return "yahoo_finance";
   if (card.source.toLowerCase().includes("krx")) return "krx_openapi";
   if (card.source.toLowerCase().includes("fred")) return "fred";
@@ -501,18 +735,10 @@ function frequencyForContext(card: MarketContextLike, provider: SourceProvider):
 }
 
 function seriesIdForContext(card: MarketContextLike) {
-  if (card.source_class === "proxy") {
-    if (card.code === "S02") return "DX-Y.NYB,KRW=X";
-    if (card.code === "S03") return "^VIX,HYG,JNK,LQD,TLT";
-    if (card.code === "S05") return "BIL,SGOV,SHV";
-    if (card.code === "S06") return "TQQQ,SQQQ,SPXL,SPXS";
-  }
   if (card.code === "S01") return "FRED:WALCL";
   if (card.code === "S02") return "FRED:DEXKOUS";
   if (card.code === "S03") return "FRED:BAMLH0A0HYM2";
-  if (card.code === "S04") return "KRX:FOREIGN_NET_BUY";
   if (card.code === "S05") return "FRED:WRESBAL";
-  if (card.code === "S06") return "KRX:CREDIT_BALANCE";
   return undefined;
 }
 

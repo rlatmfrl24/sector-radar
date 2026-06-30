@@ -201,15 +201,15 @@ Configuration:
 }
 ```
 
-Cloudflare cron executes on UTC time. The configured windows cover the US post-close period across daylight saving time and the KRX KST morning retry window, including Monday KST after the weekend. The Worker still makes the final decision using `America/New_York` or `Asia/Seoul` market time, and skips external calls outside the optimized windows. The UI converts timestamps to the user's local timezone and currently surfaces KST when the browser timezone is `Asia/Seoul`.
+Cloudflare cron executes on UTC time. The configured windows cover the US post-close period across daylight saving time. The Worker still makes the final decision using `America/New_York` market time and skips external calls outside the optimized windows. The UI converts timestamps to the user's local timezone and currently surfaces KST when the browser timezone is `Asia/Seoul`.
 
 The Worker:
 
 - fetches Yahoo chart daily data through a Worker-compatible adapter
 - fetches FRED observations through REST when `FRED_API_KEY` is configured
-- fetches KRX OpenAPI reference trading fields when `KRX_API_KEY` is configured
+- leaves KRX context refresh disabled by default until a directly useful KRX investor-flow or leverage source is selected
 - treats Layer 1 and Layer 3 as daily-close sector snapshots, not 15 minute intraday signals
-- runs a post-close core phase for benchmark, sector ETFs, and Layer 2 Yahoo proxies
+- runs a post-close core phase for benchmark and sector ETFs
 - runs later post-close holding phases for representative holdings only, so breadth coverage fills quickly without refetching core ETFs every time
 - skips Yahoo calls when core and representative holdings already have the latest daily close
 - fetches existing symbols incrementally and only missing symbols with full history, so one new holding does not force a full-year rewrite for every symbol
@@ -217,7 +217,7 @@ The Worker:
 - computes RS/RRG, multi-window RRG evidence, breadth, participation, and Layer 2 context
 - upserts latest sector snapshots into `sector_metrics_daily`
 - upserts Layer 2 context cards into `market_context_daily`
-- updates `data_refresh_status` independently for `yahoo_finance`, `fred`, and `krx_openapi`
+- updates `data_refresh_status` independently for active providers
 - records each cron lifecycle in `run_log`, including stale `refreshing` recovery and final success/failure messages
 - keeps `validation_status = unvalidated` and `expose_probability = 0`
 
@@ -232,6 +232,7 @@ Default ingestion vars:
   "YAHOO_HOLDINGS_FETCH_BUDGET": "38",
   "YAHOO_FETCH_CONCURRENCY": "2",
   "FRED_REFRESH_INTERVAL_MINUTES": "720",
+  "ENABLE_KRX_CONTEXT_REFRESH": "false",
   "KRX_REFRESH_INTERVAL_MINUTES": "1440",
   "KRX_CONTEXT_ENDPOINT": "http://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd,http://data-dbg.krx.co.kr/svc/apis/sto/ksq_bydd_trd"
 }
@@ -254,7 +255,7 @@ Recommended operating model:
 | Yahoo core | 16:20-16:45 ET | 15 min gate inside cron | Daily Layer 1/3 snapshot base |
 | Yahoo holdings | 16:45-20:00 ET | 15 min gate inside cron | Breadth shard fill and snapshot recompute |
 | FRED | 16:45-18:00 ET | 720 min default | Official Layer 2 macro observations |
-| KRX | 08:20-09:25 KST | 1440 min default | Prior-day official/reference KRX context |
+| KRX | disabled by default | opt-in only | Deferred until a directly useful investor-flow or leverage source is selected |
 | off_window | all other times | none | Preserve last successful snapshot and write run log skip entries |
 
 If an intraday preview is enabled later, keep it core-only and label it provisional in the UI.
@@ -283,7 +284,7 @@ npx wrangler secret put FRED_API_KEY --config wrangler.ingest.jsonc
 npx wrangler secret put KRX_API_KEY --config wrangler.ingest.jsonc
 ```
 
-FRED and KRX are optional at runtime. If a secret is missing or an endpoint shape changes, only that provider's `data_refresh_status` becomes failed/stale; Yahoo sector snapshots remain available.
+FRED is optional at runtime. If its secret is missing or an endpoint shape changes, only FRED market context becomes failed/stale; Yahoo sector snapshots remain available. KRX remains an opt-in research adapter and is not part of active US Sector Radar Layer 2 by default.
 
 ## 7. Local Yahoo Research Refresh
 
@@ -310,12 +311,12 @@ Layer 2 is split by `source_class`:
 | Input | Preferred source | Fallback | Notes |
 |---|---|---|
 | ETF Participation | Yahoo OHLCV | none | Uses sector ETF RVOL, OBV slope, and CMF. |
-| Fed Policy / WALCL | FRED `WALCL`, `DFF/SOFR`, `DGS2`, `DFII5` | Yahoo rate ETF proxy | `DFII5` is the nearest official TIPS real-yield series used here; `DFII2` is not a valid FRED series. |
-| Dollar / FX Gate | FRED `DEXKOUS`, `DTWEXBGS` | Yahoo DXY/USDKRW proxy | DXY symbol availability should remain monitored. |
-| VIX / Credit | FRED `BAMLH0A0HYM2`, `VIXCLS` | Yahoo HYG/JNK/LQD/TLT proxy | HY OAS should not be represented as ETF data. |
+| Fed Policy / WALCL | FRED `WALCL`, `DFF/SOFR`, `DGS2`, `DFII5` | none in active Layer 2 | `DFII5` is the nearest official TIPS real-yield series used here; `DFII2` is not a valid FRED series. |
+| Dollar / FX Gate | FRED `DEXKOUS`, `DTWEXBGS` | none in active Layer 2 | Yahoo DXY/USDKRW proxy is not shown as an official substitute. |
+| VIX / Credit | FRED `BAMLH0A0HYM2`, `VIXCLS` | none in active Layer 2 | HY OAS should not be represented as ETF data. |
 | KRX foreign flow | separate KRX investor-flow source needed | excluded from active Layer 2 | Current KRX OpenAPI stock endpoints expose daily trading value, volume, and market cap. Foreign-flow is deferred for US Sector Radar. |
-| Reserve / cash proxy | FRED `WRESBAL` | Yahoo cash ETF proxy | WRESBAL is a reserve-balance proxy and must not be labelled as official MMF total assets. |
-| Credit / leverage proxy | FINRA monthly margin statistics or FRED broker/dealer margin-loan proxy | Yahoo leveraged ETF proxy | ETF proxy is acceptable for research display, but it is not margin debt. |
+| Bank reserve balances | FRED `WRESBAL` | none in active Layer 2 | WRESBAL is bank reserve balances and must not be labelled as official MMF total assets. |
+| Credit / leverage proxy | FINRA monthly margin statistics or FRED broker/dealer margin-loan proxy | excluded from active Layer 2 | Leveraged ETF proxies are not shown as margin debt substitutes. |
 
 Proxy signals must be displayed as proxy signals in `source_metrics`, `market_context.source_class`, and UI copy. They must not be presented as official source data.
 

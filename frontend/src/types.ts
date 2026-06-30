@@ -119,6 +119,27 @@ export interface SourceFreshnessItem {
   warning?: string;
 }
 
+export type SourceExpansionLayer = "layer1" | "layer2";
+export type SourceExpansionKind = "official" | "price" | "supplemental" | "manual" | "held";
+export type SourceExpansionStatus = "active" | "candidate" | "deferred";
+
+export interface SourceExpansionItem {
+  id: string;
+  layer: SourceExpansionLayer;
+  area: string;
+  label: string;
+  provider: SourceFreshnessProvider | "cboe" | "sec_edgar" | "treasury_fiscaldata" | "finra";
+  route: string;
+  source_kind: SourceExpansionKind;
+  status: SourceExpansionStatus;
+  cadence: string;
+  purpose: string;
+  current_signal: string;
+  next_step: string;
+  latest_date?: string;
+  warning?: string;
+}
+
 export type TriggerWatchlistStatus = "quiet" | "fired" | "unknown" | "manual_check";
 
 export interface TriggerWatchlistItem {
@@ -212,6 +233,7 @@ export interface SectorsResponse {
   layer1_flow?: LayerOneFlowSnapshot;
   concentration?: LeadershipConcentration;
   source_freshness?: SourceFreshnessItem[];
+  source_expansion?: SourceExpansionItem[];
   watchlist?: TriggerWatchlistItem[];
   context_reconciliation?: ContextReconciliation;
 }

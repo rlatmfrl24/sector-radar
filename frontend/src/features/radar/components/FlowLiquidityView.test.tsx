@@ -32,9 +32,24 @@ describe("FlowLiquidityView explain mode", () => {
 
     expect(html).toContain("근거와 확인 지점");
     expect(html).toContain("리스크 트리거");
+    expect(html).toContain("전체 판단");
+    expect(html).toContain("흐름 최종 판단");
+    expect(html).toContain("확인 체크리스트");
+    expect(html).toContain("지표별 해석");
+    expect(html).toContain("마켓 컨텍스트");
+    expect(html).toContain("분석 리스크별 판단");
+    expect(html).toContain("분석 리스크");
+    expect(html).toContain("관련 리스크");
+    expect(html).toContain("의미");
+    expect(html).toContain("해석");
+    expect(html).toContain("출처 정보");
+    expect(html).toContain("요청 정보");
+    expect(html).toContain("받아온 결과");
+    expect(html).not.toContain("Layer 1 데이터");
+    expect(html).not.toContain("Layer 2 원천");
+    expect(html).not.toContain("TGA·Daily Treasury Statement");
     expect(html).not.toContain("쉬운 흐름 해설");
     expect(html).not.toContain("오늘의 쉬운 결론");
-    expect(html).not.toContain("연준 유동성, 정책금리");
   });
 
   it("replaces the dense dashboard with a separate beginner-friendly screen", () => {
@@ -57,6 +72,7 @@ describe("FlowLiquidityView explain mode", () => {
     expect(html).toContain("연준 유동성, 정책금리");
     expect(html).toContain("현재 결과");
     expect(html).toContain("현재 경고등은 꺼져 있습니다.");
+    expect(html).not.toContain("데이터 수집 지도");
     expect(html).not.toContain("근거와 확인 지점");
   });
 });

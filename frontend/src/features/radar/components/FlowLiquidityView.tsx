@@ -573,7 +573,7 @@ function buildBeginnerResultReadout({
 
   nextChecks.push("다음 갱신 후에도 같은 섹터가 리더인지 확인합니다.");
   nextChecks.push("healthy breadth가 늘어나는지, 아니면 소수 섹터만 버티는지 확인합니다.");
-  if (activeCards.some((card) => card.source_class === "proxy")) nextChecks.push("proxy 항목은 원자료가 아니므로 방향 참고용으로만 봅니다.");
+  if (activeCards.some((card) => card.source_class === "proxy")) nextChecks.push("보조 지표 항목은 원자료가 아니므로 방향 참고용으로만 봅니다.");
   if (firedTriggers.length) {
     nextChecks.push("켜진 리스크 경고등이 다음 수집에서도 유지되는지 확인합니다.");
   } else {
@@ -635,8 +635,43 @@ function triggerInterpretation(firedTriggers: TriggerWatchlistItem[], total: num
 
 function sourceClassSummary(cards: MarketContextCard[]) {
   const official = cards.filter((card) => card.source_class === "official").length;
-  const proxy = cards.filter((card) => card.source_class === "proxy").length;
-  return `official ${official} · proxy ${proxy}`;
+  const supplemental = cards.filter((card) => card.source_class === "proxy").length;
+  return `공식 ${official} · 보조 ${supplemental}`;
+}
+
+type InsightTone = "good" | "neutral" | "risk" | "pending";
+
+interface LayerVerdictItem {
+  label: string;
+  value: string;
+  detail: string;
+  tone: InsightTone;
+}
+
+interface DataInsight {
+  category: string;
+  id: string;
+  label: string;
+  source: string;
+  meaning: string;
+  value: string;
+  judgement: string;
+  interpretation: string;
+  meter: number | null;
+  meterLabel: string;
+  tone: InsightTone;
+}
+
+interface FlowCheckpoint {
+  detail: string;
+  label: string;
+  reason: string;
+  value: string;
+}
+
+interface SourceDisclosureItem {
+  label: string;
+  value: string;
 }
 
 function LayerOneFlow({
@@ -673,6 +708,16 @@ function LayerOneFlow({
               : "Mixed";
   const topLeader = sectors[0];
   const flowMeta = `${grouped.leading.length} leading · ${grouped.improving.length} improving · ${warnings.length} warnings`;
+  const verdictItems = buildLayerOneVerdictItems({
+    constructiveCount,
+    healthyBreadthCount,
+    layerOneFlow,
+    reconciliation,
+    sectors,
+    topLeader,
+    warnings,
+    weakBreadthCount,
+  });
 
   return (
     <section className="layer-section layer-one" aria-label="layer one flow">
@@ -691,23 +736,22 @@ function LayerOneFlow({
             </div>
             <strong>{topLeader ? `${topLeader.sector_code} lead` : "no leader"}</strong>
           </div>
-          <p>
-            {layerOneFlow?.narrative ??
-              `리더 ${grouped.leading.length}개와 순환 후보 ${grouped.improving.length}개가 시장 흐름을 만들고, 경고 ${warnings.length}개와 breadth ${healthyBreadthCount}/${sectors.length}가 내부 건강도를 제한합니다.`}
-          </p>
+          <FlowFinalReadout
+            constructiveCount={constructiveCount}
+            healthyBreadthCount={healthyBreadthCount}
+            layerOneFlow={layerOneFlow}
+            reconciliation={reconciliation}
+            sectors={sectors}
+            warnings={warnings}
+            weakBreadthCount={weakBreadthCount}
+          />
+          <LayerVerdictList items={verdictItems} title="전체 판단" />
           <LayerOneSignalPanel flow={layerOneFlow} />
-          {reconciliation ? (
-            <div className={`reconciliation-badge ${reconciliation.state}`}>
-              <strong>{reconciliationLabel(reconciliation.state)}</strong>
-              <span>{reconciliation.narrative}</span>
-            </div>
-          ) : null}
         </article>
         <FlowDistributionPanel
           grouped={grouped}
           healthyBreadthCount={healthyBreadthCount}
           layerOneFlow={layerOneFlow}
-          reconciliation={reconciliation}
           sectors={sectors}
           warnings={warnings}
           weakBreadthCount={weakBreadthCount}
@@ -849,7 +893,6 @@ function FlowDistributionPanel({
   grouped,
   healthyBreadthCount,
   layerOneFlow,
-  reconciliation,
   sectors,
   warnings,
   weakBreadthCount,
@@ -857,13 +900,20 @@ function FlowDistributionPanel({
   grouped: ReturnType<typeof groupByQuadrant>;
   healthyBreadthCount: number;
   layerOneFlow?: LayerOneFlowSnapshot;
-  reconciliation?: ContextReconciliation;
   sectors: SectorSnapshot[];
   warnings: SectorSnapshot[];
   weakBreadthCount: number;
 }) {
   const constructive = [...grouped.leading, ...grouped.improving];
   const neutralBreadth = Math.max(0, sectors.length - healthyBreadthCount - weakBreadthCount);
+  const detailInsights = buildLayerOneInsights({
+    constructive,
+    healthyBreadthCount,
+    layerOneFlow,
+    sectors,
+    warnings,
+    weakBreadthCount,
+  });
 
   return (
     <article className="flow-distribution-card dashboard-card" aria-label="layer one distribution">
@@ -874,6 +924,11 @@ function FlowDistributionPanel({
           <FlowSparkline sectors={sectors} />
         </div>
         <div className="flow-cluster-grid">
+          <DataInsightPanel
+            items={detailInsights}
+            meta="meaning + value + readout"
+            title="지표별 해석"
+          />
           <FlowCluster
             detail="leading + improving"
             items={constructive}
@@ -897,15 +952,6 @@ function FlowDistributionPanel({
           <FlowCheckpointList
             healthyBreadthCount={healthyBreadthCount}
             layerOneFlow={layerOneFlow}
-            sectors={sectors}
-            warnings={warnings}
-            weakBreadthCount={weakBreadthCount}
-          />
-          <FlowFinalReadout
-            constructiveCount={constructive.length}
-            healthyBreadthCount={healthyBreadthCount}
-            layerOneFlow={layerOneFlow}
-            reconciliation={reconciliation}
             sectors={sectors}
             warnings={warnings}
             weakBreadthCount={weakBreadthCount}
@@ -942,7 +988,7 @@ function LayerOneSignalPanel({ flow }: { flow?: LayerOneFlowSnapshot }) {
         <RangeTrack label="pressure" tone={flow?.risk.state === "elevated" ? "risk" : "default"} value={vix === null ? null : Math.min(100, (vix / 40) * 100)} />
       </SignalRow>
       <SignalRow
-        label="Breadth Proxy"
+        label="Breadth 보조지표"
         meta={flow?.breadth_quality.state ?? "unknown"}
         value={`RSP ${formatPercent(rsp)}`}
         subValue={`IWM ${formatPercent(iwm)} · QQQ ${formatPercent(qqq)}`}
@@ -1105,12 +1151,15 @@ function FlowCheckpointList({
 }) {
   const topLeader = sectors[0];
   const warningCodes = sectorCodes(warnings);
-  const checkpoints = [
+  const checkpoints: FlowCheckpoint[] = [
     {
+      detail: "다음 수집 뒤에도 같은 섹터가 앞에 있으면 흐름 지속으로 봅니다.",
       label: "리더 유지",
       value: topLeader ? `${topLeader.sector_code} · ${topLeader.rulebook.lead_pattern}` : "no leader",
+      reason: "좋은 모멘텀이 한 번 반짝인지, 지속되는 힘인지 구분합니다.",
     },
     {
+      detail: "SPY와 시장 tape가 섹터 리더십을 함께 밀어주는지 확인합니다.",
       label: "Tape 확인",
       value:
         layerOneFlow?.tape.ret_1m !== undefined
@@ -1118,25 +1167,35 @@ function FlowCheckpointList({
           : healthyBreadthCount > weakBreadthCount
             ? `${healthyBreadthCount} healthy breadth`
             : `${weakBreadthCount} weak breadth`,
+      reason: "섹터만 강하고 시장 자체가 약하면 리더십 신뢰도가 낮아집니다.",
     },
     {
+      detail: "소수 대형 섹터가 아니라 여러 섹터로 강세가 퍼지는지 봅니다.",
       label: "폭 확인",
       value: layerOneFlow
         ? `RSP ${formatPercent(layerOneFlow.breadth_quality.rsp_vs_spy_1m)}`
         : warnings.length
           ? warningCodes || `${warnings.length} sectors`
           : "none",
+      reason: "폭이 좁으면 강한 리더가 있어도 흔들릴 때 방어력이 약합니다.",
     },
   ];
 
   return (
     <div className="flow-checkpoints">
-      <span>다음 확인</span>
+      <div className="flow-checkpoints-head">
+        <span>확인 체크리스트</span>
+        <p>현재 판단이 유지되는지 다음 수집에서 다시 볼 핵심 조건입니다.</p>
+      </div>
       {checkpoints.map((checkpoint) => (
-        <div key={checkpoint.label}>
-          <strong>{checkpoint.label}</strong>
-          <small>{checkpoint.value}</small>
-        </div>
+        <article key={checkpoint.label}>
+          <header>
+            <strong>{checkpoint.label}</strong>
+            <b>{checkpoint.value}</b>
+          </header>
+          <p>{checkpoint.detail}</p>
+          <small>{checkpoint.reason}</small>
+        </article>
       ))}
     </div>
   );
@@ -1169,20 +1228,24 @@ function FlowFinalReadout({
       : `breadth는 ${healthyBreadthCount}/${sectors.length}개 건강 신호에 머물러 확산 확인이 필요합니다.`;
   const transitionLabel = layerOneFlow ? transitionKorean(layerOneFlow.transition) : "전환 정보는 제한적";
   const reconciliationText = reconciliation
-    ? `${reconciliationLabel(reconciliation.state)} 맥락입니다.`
+    ? `마켓 컨텍스트는 ${reconciliationLabel(reconciliation.state)}입니다. ${reconciliation.narrative}`
     : "Layer 2 맥락은 아직 보류 상태입니다.";
+  const fallbackNarrative =
+    topLeader
+      ? `${topLeader.sector_code}가 현재 흐름을 이끌고, 주도·순환 축은 ${constructiveCount}개 섹터에서 형성됩니다.`
+      : `주도·순환 축은 ${constructiveCount}개 섹터에서 형성됩니다.`;
+  const mergedNarrative = layerOneFlow?.narrative ?? fallbackNarrative;
 
   return (
     <div className="flow-final-readout" aria-label="Layer 1 final readout">
       <div>
-        <span>Final Read</span>
+        <span>흐름 최종 판단</span>
         <strong>{layerOneFlow ? stateKorean(layerOneFlow.state) : "섹터 흐름 요약"}</strong>
         <em>{transitionLabel}</em>
       </div>
       <p>
-        {topLeader ? `${topLeader.sector_code}가 현재 흐름을 이끌고 ` : ""}
-        주도·순환 축은 {constructiveCount}개 섹터에서 형성됩니다. {breadthText} {riskText}{" "}
-        {reconciliationText} 이 판단은 확률이 아니라 현재 모듈 정렬과 불일치를 서술한 리서치 판독입니다.
+        {mergedNarrative} {breadthText} {riskText} {reconciliationText} 이 판단은 확률이 아니라 현재 모듈 정렬과
+        불일치를 서술한 리서치 판독입니다.
       </p>
     </div>
   );
@@ -1233,7 +1296,6 @@ function LayerTwoLiquidity({
   const distributionCount = sectors.filter((sector) => sector.modules.participation.state === "distribution").length;
   const cards = marketContextCards(selected, marketContext);
   const activeCards = cards.filter(isActiveMarketContextCard);
-  const sourceMix = contextSourceMix(activeCards);
   const firedCount = watchlist.filter((item) => item.status === "fired").length;
   const liquidityNarrative = buildLiquidityNarrative({
     activeCards,
@@ -1243,11 +1305,19 @@ function LayerTwoLiquidity({
     selected,
     watchlistCount: watchlist.length,
   });
+  const verdictItems = buildLayerTwoVerdictItems({
+    activeCards,
+    accumulationCount,
+    distributionCount,
+    firedCount,
+    selected,
+    watchlist,
+  });
 
   return (
     <section className="layer-section layer-two" aria-label="layer two liquidity">
       <LayerHeader
-        description="ETF 거래량은 Yahoo 가격으로 확인하고, 매크로 입력은 official/proxy/held를 분리해서 봅니다."
+        description="ETF 거래량은 Yahoo 가격으로 확인하고, 마켓 컨텍스트는 직접 수집 가능한 FRED 원천만 표시합니다."
         eyebrow="Layer 2"
         meta="participation + market context"
         title="여력 (유동성)"
@@ -1255,22 +1325,25 @@ function LayerTwoLiquidity({
       <div className="liquidity-board">
         <article className="liquidity-overview dashboard-card">
           <PanelHeader eyebrow="Fuel Mix" title="요약" meta={selected.sector_code} />
+          <p className="liquidity-summary-lede">{liquidityNarrative}</p>
+          <LayerVerdictList items={verdictItems} title="유동성 판단" />
           <ModuleMeter label="Selected ETF volume" module={selected.modules.participation} />
           <div className="metric-pair compact">
             <MiniMetric label="Accumulation" value={`${accumulationCount}`} />
             <MiniMetric label="Distribution" value={`${distributionCount}`} />
           </div>
-          <SourceMixBar sourceMix={sourceMix} />
           <div className="flow-metric-grid compact" aria-label="liquidity checks">
-            <MiniMetric label="Official" value={`${sourceMix.official}`} />
-            <MiniMetric label="Proxy" value={`${sourceMix.proxy}`} />
-            <MiniMetric label="Triggers" value={`${firedCount}/${watchlist.length}`} />
+            <MiniMetric label="컨텍스트" value={`${activeCards.length}개`} />
+            <MiniMetric label="경고등" value={`${firedCount}/${watchlist.length}`} />
+            <MiniMetric label="최근 기준" value={latestMarketContextDate(activeCards)} />
           </div>
-          <p className="liquidity-narrative">{liquidityNarrative}</p>
         </article>
         <div className="liquidity-context-tools">
-          <MarketContextMatrix history={contextHistory} marketContext={activeCards} />
-          <TriggerWatchlistPanel items={watchlist} />
+          <MarketContextInsightPanel
+            history={contextHistory}
+            marketContext={activeCards}
+            watchlist={watchlist}
+          />
         </div>
       </div>
     </section>
@@ -1291,52 +1364,564 @@ interface MarketContextCard {
   warnings: string[];
 }
 
-function SourceMixBar({
-  sourceMix,
+function LayerVerdictList({
+  items,
+  title,
 }: {
-  sourceMix: Record<MarketContextCard["source_class"], number>;
+  items: LayerVerdictItem[];
+  title: string;
 }) {
-  const total = Object.values(sourceMix).reduce((sum, value) => sum + value, 0);
-  const segments: Array<{ className: MarketContextCard["source_class"]; label: string; value: number }> = [
-    { className: "official", label: "Official", value: sourceMix.official },
-    { className: "proxy", label: "Proxy", value: sourceMix.proxy },
-    { className: "manual", label: "Manual", value: sourceMix.manual },
-    { className: "held", label: "Held", value: sourceMix.held },
-  ];
-  const visibleSegments = segments.filter(
-    (segment) => segment.value > 0 || segment.className === "official" || segment.className === "proxy",
+  return (
+    <div className="layer-verdict-list" aria-label={title}>
+      <strong>{title}</strong>
+      {items.map((item) => (
+        <div className={`layer-verdict-item ${item.tone}`} key={item.label}>
+          <span>{item.label}</span>
+          <b>{item.value}</b>
+          <small>{item.detail}</small>
+        </div>
+      ))}
+    </div>
   );
+}
+
+function DataInsightPanel({
+  items,
+  meta,
+  title,
+}: {
+  items: DataInsight[];
+  meta: string;
+  title: string;
+}) {
+  return (
+    <div className="data-insight-panel" aria-label={`${title}: ${meta}`}>
+      <div className="data-insight-head">
+        <div>
+          <span>Indicator Guide</span>
+          <strong>{title}</strong>
+        </div>
+        <small>{items.length} checks</small>
+      </div>
+      <div className="data-insight-grid">
+        {items.map((item) => {
+          const sourceItems = dataInsightSourceItems(item);
+          return (
+            <div className={`data-insight-item ${item.tone}`} key={item.id} title={sourceDisclosureTitle(sourceItems)}>
+              <header>
+                <span>{item.category}</span>
+                <b>{item.judgement}</b>
+              </header>
+              <div className="data-insight-value">
+                <strong>{item.label}</strong>
+                <em>{item.value}</em>
+              </div>
+              <InsightMeter label={item.meterLabel} tone={item.tone} value={item.meter} />
+              <p>
+                <b>의미</b>
+                {item.meaning}
+              </p>
+              <p>
+                <b>해석</b>
+                {item.interpretation}
+              </p>
+              <SourceDisclosure items={sourceItems} />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function InsightMeter({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone: InsightTone;
+  value: number | null;
+}) {
+  const width = value === null ? 0 : clampPercent(value);
+  return (
+    <div className={`insight-meter ${tone}`}>
+      <i style={{ width: `${width}%` }} />
+      <small>{label}</small>
+    </div>
+  );
+}
+
+function MarketContextInsightPanel({
+  history,
+  marketContext,
+  watchlist,
+}: {
+  history: HistoryResponse["market_context"];
+  marketContext: MarketContextCard[];
+  watchlist: TriggerWatchlistItem[];
+}) {
+  const byCode = new Map(history.map((item) => [item.code, item.points.slice(-4)]));
+  const fired = watchlist.filter((item) => item.status === "fired");
 
   return (
-    <div className="source-mix" aria-label="Layer 2 source mix">
-      <div className="source-mix-bar">
-        {visibleSegments.map((segment) => (
-          <i
-            className={segment.className}
-            key={segment.className}
-            style={{ width: `${total ? Math.max(4, (segment.value / total) * 100) : 0}%` }}
-          />
-        ))}
+    <article className="market-context-insight-panel dashboard-card">
+      <PanelHeader
+        eyebrow="Market Context"
+        title="마켓 컨텍스트"
+        meta={`${marketContext.length} context · ${fired.length} risk on`}
+      />
+      <div className="context-insight-grid">
+        {marketContext.map((card) => {
+          const points = byCode.get(card.code) ?? [];
+          const fallback = points.length ? points : [{ state: card.state, transition: card.transition, date: "current" }];
+          const relatedRisks = watchlist.filter((item) => triggerContextCode(item) === card.code);
+          return (
+            <ContextInsightCard
+              card={card}
+              key={card.code}
+              relatedRisks={relatedRisks}
+              trend={fallback}
+            />
+          );
+        })}
       </div>
-      <div className="source-mix-legend">
-        {visibleSegments.map((segment) => (
-          <span className={segment.className} key={segment.className}>
-            {segment.label} <strong>{segment.value}</strong>
-          </span>
+      <ContextRiskSummary items={watchlist} />
+    </article>
+  );
+}
+
+function ContextInsightCard({
+  card,
+  relatedRisks,
+  trend,
+}: {
+  card: MarketContextCard;
+  relatedRisks: TriggerWatchlistItem[];
+  trend: Array<{ date: string; state: string; transition: string }>;
+}) {
+  const firedRelated = relatedRisks.filter((item) => item.status === "fired");
+  const sourceItems = marketContextSourceItems(card);
+
+  return (
+    <div className={`context-insight-card ${contextTone(card)}`} title={sourceDisclosureTitle(sourceItems)}>
+      <header>
+        <span>{card.code}</span>
+        <div>
+          <strong>{card.title}</strong>
+          <small>{judgementLabel(card.state)}</small>
+        </div>
+        <em>{firedRelated.length ? "경고 켜짐" : "정상 확인"}</em>
+      </header>
+      <div className="context-insight-value">
+        <strong>{contextPrimaryValue(card)}</strong>
+        <span className="context-dots" aria-label={`${card.code} trend`}>
+          {trend.map((point, index) => (
+            <mark className={stateClass(point.state)} key={`${card.code}-${point.date}-${index}`} />
+          ))}
+        </span>
+      </div>
+      <InsightMeter label="판단 강도" tone={contextTone(card)} value={contextStateMeter(card)} />
+      <p>
+        <b>의미</b>
+        {marketContextExplanation(card.code)}
+      </p>
+      <p>
+        <b>해석</b>
+        {contextResultExplanation(card)}
+      </p>
+      <div className="context-related-risk">
+        <b>관련 리스크</b>
+        {relatedRisks.length ? (
+          relatedRisks.map((item) => (
+            <span className={item.status} key={item.id} title={`${item.trigger}\n${item.meaning}`}>
+              {item.label}: {statusLabel(item.status)}
+            </span>
+          ))
+        ) : (
+          <span className="quiet">연결된 경고 없음</span>
+        )}
+      </div>
+      <SourceDisclosure items={sourceItems} />
+    </div>
+  );
+}
+
+function SourceDisclosure({ items }: { items: SourceDisclosureItem[] }) {
+  const visible = items.filter((item) => item.value);
+  return (
+    <details className="source-disclosure">
+      <summary>출처 정보</summary>
+      <dl>
+        {visible.map((item) => (
+          <div key={`${item.label}-${item.value}`}>
+            <dt>{item.label}</dt>
+            <dd>{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
+function ContextRiskSummary({ items }: { items: TriggerWatchlistItem[] }) {
+  const visible = items.length ? items : [emptyWatchlistItem()];
+  const firedCount = visible.filter((item) => item.status === "fired").length;
+  return (
+    <div className="context-risk-summary">
+      <div>
+        <span>Risk Trigger</span>
+        <strong>분석 리스크별 판단</strong>
+        <em>{firedCount}/{visible.length} 켜짐</em>
+      </div>
+      <div className="context-risk-list">
+        {visible.map((item) => (
+          <article className={`context-risk-item ${item.status}`} key={item.id} title={`${item.trigger}\n${item.meaning}`}>
+            <header>
+              <strong>{item.label}</strong>
+              <b>{statusLabel(item.status)}</b>
+            </header>
+            <dl>
+              <div>
+                <dt>분석 리스크</dt>
+                <dd>{item.trigger}</dd>
+              </div>
+              <div>
+                <dt>판단</dt>
+                <dd>{triggerStatusExplanation(item.status)}</dd>
+              </div>
+              <div>
+                <dt>해석</dt>
+                <dd>{item.meaning}</dd>
+              </div>
+            </dl>
+            <small>{item.warnings[0] ? watchlistWarningLabel(item.warnings[0]) : "현재 추가 경고 메모는 없습니다."}</small>
+          </article>
         ))}
       </div>
     </div>
   );
 }
 
-function contextSourceMix(cards: MarketContextCard[]) {
-  return cards.reduce<Record<MarketContextCard["source_class"], number>>(
-    (counts, card) => {
-      counts[card.source_class] += 1;
-      return counts;
+function triggerContextCode(item: TriggerWatchlistItem) {
+  const text = `${item.id} ${item.label} ${item.trigger}`.toLowerCase();
+  if (text.includes("walcl") || text.includes("policy") || text.includes("liquidity")) return "S01";
+  if (text.includes("dxy") || text.includes("usdkrw") || text.includes("fx") || text.includes("dollar")) return "S02";
+  if (text.includes("hy oas") || text.includes("vix") || text.includes("credit") || text.includes("spread")) return "S03";
+  if (text.includes("reserve") || text.includes("wresbal") || text.includes("mmf")) return "S05";
+  return null;
+}
+
+function dataInsightSourceItems(item: DataInsight): SourceDisclosureItem[] {
+  return [
+    {
+      label: "요청 정보",
+      value: `${item.category}에서 ${item.label} 판단에 필요한 지표를 요청했습니다.`,
     },
-    { held: 0, manual: 0, official: 0, proxy: 0 },
-  );
+    {
+      label: "요청/수집 항목",
+      value: item.source,
+    },
+    {
+      label: "받아온 결과",
+      value: `${item.value} · 현재 판단 ${item.judgement}`,
+    },
+    {
+      label: "계산/표시",
+      value: `${item.meterLabel} 기준으로 화면 막대와 해석 문구를 만들었습니다.`,
+    },
+  ];
+}
+
+function marketContextSourceItems(card: MarketContextCard): SourceDisclosureItem[] {
+  const evidence = contextEvidenceItems(card);
+  const warnings = card.warnings.map(watchlistWarningLabel).join(" / ");
+  return [
+    {
+      label: "요청 정보",
+      value: `${card.title}(${card.code})의 시장 컨텍스트 판단에 필요한 ${sourceClassLabel(card)} 시계열을 요청했습니다.`,
+    },
+    {
+      label: "요청/수집 항목",
+      value: card.source,
+    },
+    {
+      label: "받아온 결과",
+      value: evidence.length ? evidence.join(" · ") : contextPrimaryValue(card),
+    },
+    {
+      label: "최신 기준",
+      value: updateLabel(card),
+    },
+    {
+      label: "주의 메모",
+      value: warnings || "추가 경고 메모는 없습니다.",
+    },
+  ];
+}
+
+function sourceDisclosureTitle(items: SourceDisclosureItem[]) {
+  return items
+    .filter((item) => item.value)
+    .map((item) => `${item.label}: ${item.value}`)
+    .join("\n");
+}
+
+function buildLayerOneVerdictItems({
+  constructiveCount,
+  healthyBreadthCount,
+  layerOneFlow,
+  reconciliation,
+  sectors,
+  topLeader,
+  warnings,
+  weakBreadthCount,
+}: {
+  constructiveCount: number;
+  healthyBreadthCount: number;
+  layerOneFlow?: LayerOneFlowSnapshot;
+  reconciliation?: ContextReconciliation;
+  sectors: SectorSnapshot[];
+  topLeader?: SectorSnapshot;
+  warnings: SectorSnapshot[];
+  weakBreadthCount: number;
+}): LayerVerdictItem[] {
+  const breadthText =
+    healthyBreadthCount > weakBreadthCount
+      ? `${healthyBreadthCount}/${sectors.length}개 섹터가 내부 확산을 뒷받침합니다.`
+      : `${weakBreadthCount}/${sectors.length}개 섹터가 약해 리더십 폭 확인이 필요합니다.`;
+  const leaderText = topLeader
+    ? `${topLeader.sector_name}(${topLeader.sector_code})가 현재 가장 앞에 있습니다.`
+    : "아직 뚜렷한 선두 섹터가 없습니다.";
+
+  return [
+    {
+      detail: layerOneFlow ? `${leaderText} 전환은 ${transitionKorean(layerOneFlow.transition)}입니다.` : leaderText,
+      label: "흐름",
+      tone: toneFromLayerOneState(layerOneFlow?.state),
+      value: layerOneFlow ? stateKorean(layerOneFlow.state) : "데이터 대기",
+    },
+    {
+      detail: breadthText,
+      label: "확산",
+      tone: breadthTone(healthyBreadthCount, weakBreadthCount),
+      value: `${healthyBreadthCount}/${sectors.length} healthy`,
+    },
+    {
+      detail: warnings.length
+        ? `경고 섹터 ${warnings.length}개는 과열, 약한 breadth, 참여 약화 여부를 같이 봅니다.`
+        : `주도·순환 축 ${constructiveCount}개가 확인되고 뚜렷한 rulebook 경고는 제한적입니다.`,
+      label: "품질",
+      tone: warnings.length ? "risk" : "good",
+      value: `${warnings.length} warnings`,
+    },
+    {
+      detail: reconciliation?.narrative ?? "유동성 컨텍스트와의 정합성은 데이터 수집 후 판단합니다.",
+      label: "정합성",
+      tone: reconciliationTone(reconciliation?.state),
+      value: reconciliation ? reconciliationLabel(reconciliation.state) : "대기",
+    },
+  ];
+}
+
+function buildLayerOneInsights({
+  constructive,
+  healthyBreadthCount,
+  layerOneFlow,
+  sectors,
+  warnings,
+  weakBreadthCount,
+}: {
+  constructive: SectorSnapshot[];
+  healthyBreadthCount: number;
+  layerOneFlow?: LayerOneFlowSnapshot;
+  sectors: SectorSnapshot[];
+  warnings: SectorSnapshot[];
+  weakBreadthCount: number;
+}): DataInsight[] {
+  const topLeader = sectors[0];
+  const leaderRs = topLeader ? numberMetric(topLeader.modules.relative_strength.evidence.rs_ratio, 100) : null;
+  const tail = sectors.at(-1);
+  const tailRs = tail ? numberMetric(tail.modules.relative_strength.evidence.rs_ratio, 100) : null;
+  const rsGap = leaderRs === null || tailRs === null ? null : leaderRs - tailRs;
+  const breadthShare = sectors.length ? (healthyBreadthCount / sectors.length) * 100 : null;
+  const vix = layerOneFlow?.risk.vix_latest ?? null;
+
+  return [
+    {
+      category: "가격 흐름",
+      id: "market-tape",
+      interpretation: marketWindInterpretation(layerOneFlow),
+      judgement: layerOneFlow ? stateKorean(layerOneFlow.state) : "대기",
+      label: "시장 흐름",
+      meaning: "SPY 가격 흐름으로 시장 전체가 섹터 리더십을 밀어주는지 봅니다.",
+      meter: decimalRangeMeter(layerOneFlow?.tape.ret_1m, -0.08, 0.08),
+      meterLabel: `SPY 1M ${formatPercent(layerOneFlow?.tape.ret_1m)}`,
+      source: "Yahoo · SPY",
+      tone: toneFromLayerOneState(layerOneFlow?.state),
+      value: `${formatPercent(layerOneFlow?.tape.ret_1m)} · 1D ${formatPercent(layerOneFlow?.tape.ret_1d)}`,
+    },
+    {
+      category: "변동성",
+      id: "risk-vol",
+      interpretation:
+        layerOneFlow?.risk.state === "elevated"
+          ? "변동성이 올라와 가격 흐름이 좋아도 급격한 되돌림 가능성을 같이 확인합니다."
+          : layerOneFlow?.risk.state === "calm"
+            ? "변동성 압력은 크지 않아 현재 흐름을 방해하는 요인은 제한적입니다."
+            : "VIX 또는 실현변동성 데이터가 부족해 위험 압력 해석을 보류합니다.",
+      judgement: judgementLabel(layerOneFlow?.risk.state ?? "unknown"),
+      label: "변동성 압력",
+      meaning: "VIX와 실현변동성으로 시장 불안이 커지는지 확인합니다.",
+      meter: vix === null ? null : Math.min(100, (vix / 40) * 100),
+      meterLabel: vix === null ? "VIX 대기" : `${vix.toFixed(1)} VIX`,
+      source: "Yahoo · VIX",
+      tone: layerOneFlow?.risk.state === "elevated" ? "risk" : layerOneFlow?.risk.state === "calm" ? "good" : "pending",
+      value: vix === null ? "unknown" : `${vix.toFixed(1)} VIX · RV20 ${formatPercentFromWhole(layerOneFlow?.risk.realized_vol_20)}`,
+    },
+    {
+      category: "섹터 폭",
+      id: "breadth-quality",
+      interpretation: breadthInterpretation({ healthyBreadthCount, sectors, warnings, weakBreadthCount }),
+      judgement: judgementLabel(layerOneFlow?.breadth_quality.state ?? "unknown"),
+      label: "내부 확산",
+      meaning: "상승이 일부 섹터에만 몰렸는지, 여러 섹터로 넓게 퍼지는지 봅니다.",
+      meter: breadthShare,
+      meterLabel: `${healthyBreadthCount}/${sectors.length} healthy`,
+      source: "Sector snapshots",
+      tone: breadthTone(healthyBreadthCount, weakBreadthCount),
+      value: `${healthyBreadthCount} healthy · ${weakBreadthCount} weak`,
+    },
+    {
+      category: "모멘텀 분포",
+      id: "rs-distribution",
+      interpretation: topLeader
+        ? `${topLeader.sector_name}(${topLeader.sector_code})가 선두입니다. 격차가 커질수록 리더십은 뚜렷하지만 소수 집중 여부도 함께 봅니다.`
+        : "섹터별 상대강도 분포가 충분하지 않아 선두 격차 판단을 보류합니다.",
+      judgement: constructive.length >= warnings.length ? "주도 우세" : "경고 우세",
+      label: "상대강도 분포",
+      meaning: "섹터별 RS Ratio를 순서대로 연결해 어느 섹터에 좋은 모멘텀이 몰리는지 봅니다.",
+      meter: rsGap === null ? null : wholeRangeMeter(rsGap, 0, 18),
+      meterLabel: rsGap === null ? "gap 대기" : `${rsGap.toFixed(1)} gap`,
+      source: "RS/RRG",
+      tone: constructive.length > warnings.length ? "good" : warnings.length ? "risk" : "neutral",
+      value: topLeader ? `${topLeader.sector_code} ${leaderRs?.toFixed(1) ?? "n/a"} lead` : "leader 대기",
+    },
+  ];
+}
+
+function buildLayerTwoVerdictItems({
+  activeCards,
+  accumulationCount,
+  distributionCount,
+  firedCount,
+  selected,
+  watchlist,
+}: {
+  activeCards: MarketContextCard[];
+  accumulationCount: number;
+  distributionCount: number;
+  firedCount: number;
+  selected: SectorSnapshot;
+  watchlist: TriggerWatchlistItem[];
+}): LayerVerdictItem[] {
+  const supportive = activeCards.filter((card) => card.state === "supportive").length;
+  const pressure = activeCards.filter((card) => card.state === "pressure").length;
+  const participation = selected.modules.participation;
+
+  return [
+    {
+      detail: `${selected.sector_name} ETF 거래량이 가격 흐름을 확인해주는지 봅니다.`,
+      label: "선택 ETF",
+      tone: participationTone(participation.state),
+      value: judgementLabel(participation.state),
+    },
+    {
+      detail: `섹터 전체에서 accumulation ${accumulationCount}개, distribution ${distributionCount}개가 확인됩니다.`,
+      label: "참여도",
+      tone: accumulationCount >= distributionCount ? "good" : "risk",
+      value: `${accumulationCount}/${Math.max(1, accumulationCount + distributionCount)} accumulation`,
+    },
+    {
+      detail: `공식 원천 기반 컨텍스트가 시장 흐름을 보조하거나 압박하는지 봅니다.`,
+      label: "마켓 컨텍스트",
+      tone: pressure > supportive ? "risk" : supportive > pressure ? "good" : "neutral",
+      value: `완화 ${supportive} · 압박 ${pressure}`,
+    },
+    {
+      detail:
+        firedCount > 0
+          ? "켜진 경고등은 다음 수집에서도 유지되는지 확인합니다."
+          : "현재 발동된 리스크 경고등은 제한적입니다.",
+      label: "리스크",
+      tone: firedCount > 0 ? "risk" : watchlist.length ? "good" : "pending",
+      value: `${firedCount}/${watchlist.length} fired`,
+    },
+  ];
+}
+
+function contextPrimaryValue(card: MarketContextCard) {
+  const evidence = contextEvidenceItems(card);
+  if (evidence.length) return evidence.join(" · ");
+  if (card.state === "supportive") return "여력 우호";
+  if (card.state === "pressure") return "압박 신호";
+  if (card.state === "neutral") return "중립";
+  return "수집 대기";
+}
+
+function toneFromLayerOneState(state?: LayerOneFlowSnapshot["state"]): InsightTone {
+  if (state === "constructive") return "good";
+  if (state === "caution") return "risk";
+  if (state === "mixed") return "neutral";
+  return "pending";
+}
+
+function breadthTone(healthyBreadthCount: number, weakBreadthCount: number): InsightTone {
+  if (healthyBreadthCount > weakBreadthCount) return "good";
+  if (weakBreadthCount > healthyBreadthCount) return "risk";
+  return "neutral";
+}
+
+function reconciliationTone(state?: ContextReconciliation["state"]): InsightTone {
+  if (state === "supportive" || state === "rotation_watch") return "good";
+  if (state === "divergent" || state === "risk_rising") return "risk";
+  return "pending";
+}
+
+function participationTone(state: string): InsightTone {
+  if (state === "accumulation" || state === "confirmed") return "good";
+  if (state === "distribution" || state === "diverging") return "risk";
+  if (state === "unknown" || state === "pending") return "pending";
+  return "neutral";
+}
+
+function contextTone(card: MarketContextCard): InsightTone {
+  if (card.state === "supportive") return "good";
+  if (card.state === "pressure") return "risk";
+  if (card.state === "pending" || card.state === "unknown") return "pending";
+  return "neutral";
+}
+
+function contextStateMeter(card: MarketContextCard) {
+  if (card.state === "supportive") return 78;
+  if (card.state === "pressure") return 26;
+  if (card.state === "neutral") return 52;
+  if (card.state === "pending" || card.state === "unknown") return 36;
+  return 45;
+}
+
+function decimalRangeMeter(value: number | null | undefined, min: number, max: number) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return clampPercent(((value - min) / Math.max(0.0001, max - min)) * 100);
+}
+
+function wholeRangeMeter(value: number | null | undefined, min: number, max: number) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return clampPercent(((value - min) / Math.max(0.0001, max - min)) * 100);
+}
+
+function clampPercent(value: number) {
+  return Math.min(100, Math.max(0, value));
 }
 
 function isActiveMarketContextCard(card: MarketContextCard) {
@@ -1399,7 +1984,7 @@ function marketContextCards(
       evidence: live?.evidence ?? {},
       meaning: live?.meaning ?? input.meaning,
       source: live?.source ?? input.source,
-      source_class: live?.source_class ?? (input.availability === "hold" ? "held" : "proxy"),
+      source_class: live?.source_class ?? (input.availability === "hold" ? "held" : "official"),
       state: live?.state ?? (input.availability === "hold" ? "held" : "pending"),
       title: live?.source_class === "held" ? input.title : live?.title ?? input.title,
       transition: live?.transition ?? (input.availability === "hold" ? "external_source_needed" : "waiting_for_cron"),
@@ -1415,57 +2000,18 @@ function isMarketContextCard(value: unknown): value is MarketContextCard {
 }
 
 function sourceClassLabel(input: MarketContextCard) {
-  if (input.source_class === "official") return "official";
-  if (input.source_class === "manual") return "manual";
-  if (input.source_class === "proxy") return "proxy";
-  return "hold";
+  if (input.source_class === "official") return "공식";
+  if (input.source_class === "manual") return "수동";
+  if (input.source_class === "proxy") return "보조";
+  return "보류";
 }
 
-function freshnessLabel(input: MarketContextCard) {
-  const latest = input.data_freshness.latest_date ?? input.data_freshness.date;
-  return typeof latest === "string" ? `${input.source_class} · ${latest}` : null;
-}
-
-function MarketContextMatrix({
-  history,
-  marketContext,
-}: {
-  history: HistoryResponse["market_context"];
-  marketContext: MarketContextCard[];
-}) {
-  const byCode = new Map(history.map((item) => [item.code, item.points.slice(-4)]));
-  return (
-    <article className="market-context-panel dashboard-card">
-      <PanelHeader eyebrow="Market Context" title="마켓 컨텍스트" meta={`${marketContext.length} active`} />
-      <div className="market-context-grid">
-        {marketContext.map((card) => {
-          const points = byCode.get(card.code) ?? [];
-          const fallback = points.length ? points : [{ state: card.state, transition: card.transition, date: "current" }];
-          const evidence = contextEvidenceItems(card);
-          return (
-            <div className={`market-context-row ${card.source_class}`} key={card.code}>
-              <span>{card.code}</span>
-              <div>
-                <strong>{card.title}</strong>
-                <small>{card.meaning}</small>
-              </div>
-              <em>
-                <span className="context-dots" aria-label={`${card.code} trend`}>
-                  {fallback.map((point, index) => (
-                    <mark className={stateClass(point.state)} key={`${card.code}-${point.date}-${index}`} />
-                  ))}
-                </span>
-                {sourceClassLabel(card)}
-              </em>
-              <b>{judgementLabel(card.state)}</b>
-              <i>{updateLabel(card)}</i>
-              <small>{evidence.length ? evidence.join(" · ") : card.warnings[0] ?? freshnessLabel(card) ?? card.source}</small>
-            </div>
-          );
-        })}
-      </div>
-    </article>
-  );
+function latestMarketContextDate(cards: MarketContextCard[]) {
+  const dates = cards
+    .map((card) => card.data_freshness.latest_date ?? card.data_freshness.date)
+    .filter((date): date is string => typeof date === "string" && date.length > 0)
+    .sort();
+  return dates.at(-1) ?? "대기";
 }
 
 function contextEvidenceItems(card: MarketContextCard) {
@@ -1480,32 +2026,14 @@ function contextEvidenceItems(card: MarketContextCard) {
     });
 }
 
-function TriggerWatchlistPanel({ items }: { items: TriggerWatchlistItem[] }) {
-  const visible = items.length ? items : [emptyWatchlistItem()];
-  return (
-    <article className="trigger-panel dashboard-card">
-      <PanelHeader eyebrow="Trigger Watchlist" title="리스크 트리거" meta={`${items.length} checks`} />
-      <div className="trigger-grid">
-        {visible.map((item) => (
-          <article className={`trigger-item ${item.status}`} key={item.id}>
-            <div>
-              <strong>{item.label}</strong>
-              <span>{statusLabel(item.status)}</span>
-            </div>
-            <p>
-              <b>조건</b>
-              {item.trigger}
-            </p>
-            <p>
-              <b>의미</b>
-              {item.meaning}
-            </p>
-            {item.warnings[0] ? <small>{item.warnings[0]}</small> : null}
-          </article>
-        ))}
-      </div>
-    </article>
-  );
+function watchlistWarningLabel(warning: string) {
+  if (warning.includes("narrow_breadth")) return "리더 섹터 내부 확산이 약해졌는지 확인합니다.";
+  if (warning.includes("narrow_leadership") || warning.includes("concentration")) return "리더십이 소수 섹터에 몰린 보조 추정입니다.";
+  if (warning.includes("supplemental") || warning.includes("proxy")) return "보조 지표이므로 공식 원천처럼 해석하지 않습니다.";
+  if (warning.includes("example_probe")) return "예시 수집 확인용 데이터입니다.";
+  if (warning.includes("sample_fallback") || warning.includes("sample fallback")) return "샘플 데이터 기준이므로 실제 수집 후 다시 확인합니다.";
+  if (warning.includes("watchlist_unavailable")) return "리스크 트리거 계산을 기다리는 중입니다.";
+  return warning.replaceAll("_", " ");
 }
 
 function emptyWatchlistItem(): TriggerWatchlistItem {
@@ -1588,9 +2116,7 @@ function marketContextExplanation(code: string) {
     S01: "연준 유동성, 정책금리, 실질금리가 시장 연료를 늘리거나 줄이는지 봅니다.",
     S02: "달러 강세와 원화 약세가 위험자산에 역풍으로 작동하는지 확인합니다.",
     S03: "VIX와 신용 스프레드가 커져 시장 불안이 섹터 리더십으로 번지는지 봅니다.",
-    S04: "한국 수급 참고 카드입니다. 현재 US 섹터 판단의 핵심 입력으로 단정하지 않습니다.",
-    S05: "은행 지급준비금으로 현금성 여력을 대체 확인합니다. 공식 MMF 총자산은 아닙니다.",
-    S06: "신용잔고와 공매도 후보를 통해 레버리지 과열과 반대매매 위험을 참고합니다.",
+    S05: "은행 지급준비금으로 현금성 여력을 확인합니다. 공식 MMF 총자산은 아닙니다.",
   };
   return dictionary[code] ?? "시장 외부 환경이 섹터 리더십을 밀어주는지, 방해하는지 확인합니다.";
 }
@@ -1604,7 +2130,7 @@ function contextResultExplanation(card: MarketContextCard) {
         : card.state === "neutral"
           ? "현재 결과는 뚜렷한 보탬도 부담도 아닌 중립입니다."
           : "현재 결과는 자동 해석을 보류합니다.";
-  const sourceText = card.source_class === "proxy" ? " 다만 proxy이므로 방향 참고용으로 봅니다." : "";
+  const sourceText = card.source_class === "proxy" ? " 다만 보조 지표이므로 방향 참고용으로 봅니다." : "";
   return `${stateText}${sourceText}`;
 }
 

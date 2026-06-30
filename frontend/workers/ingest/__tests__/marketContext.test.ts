@@ -29,12 +29,12 @@ describe("market context adapters and engine", () => {
 
     const rows = marketContextCardsToRows(cards, "US", "2026-06-24T00:00:00+00:00");
 
-    expect(rows).toHaveLength(6);
+    expect(rows).toHaveLength(4);
     expect(rows.find((row) => row.context_code === "S02")?.source_class).toBe("official");
     expect(rows.find((row) => row.context_code === "S02")?.evidence_json).toContain("DEXKOUS_latest");
   });
 
-  it("falls back to fresh Yahoo proxy when official FX evidence is stale", () => {
+  it("keeps official FRED evidence even when newer Yahoo proxy rows exist", () => {
     const rows: SeriesRow[] = [
       ...datedScalarSeries("FRED:DEXKOUS", "2026-05-08", Array.from({ length: 30 }, (_, index) => 1400 + index)),
       ...datedScalarSeries("FRED:DTWEXBGS", "2026-05-08", Array.from({ length: 30 }, (_, index) => 118 + index * 0.01)),
@@ -46,13 +46,13 @@ describe("market context adapters and engine", () => {
     const fx = cards.find((card) => card.code === "S02");
 
     expect(fx).toMatchObject({
-      source_class: "proxy",
+      source_class: "official",
       availability: "live",
-      state: "pressure",
+      state: "neutral",
     });
-    expect(fx?.data_freshness.latest_date).toBe("2026-06-24");
-    expect(fx?.evidence.official_latest_date).toBe("2026-06-06");
-    expect(fx?.warnings).toContain("official_source_stale_using_yahoo_proxy");
+    expect(fx?.data_freshness.latest_date).toBe("2026-06-06");
+    expect(fx?.evidence.DEXKOUS_latest).toBe(1429);
+    expect(fx?.warnings).not.toContain("official_source_stale_using_yahoo_proxy");
   });
 
   it("maps FRED observations into long-format value series rows", async () => {

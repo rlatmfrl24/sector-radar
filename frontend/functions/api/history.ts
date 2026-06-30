@@ -38,6 +38,8 @@ interface HistoryCoverageRow {
   days: number | null;
 }
 
+const ACTIVE_MARKET_CONTEXT_CODES = ["S01", "S02", "S03", "S05"] as const;
+
 export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   const url = new URL(request.url);
   const market = url.searchParams.get("market") ?? "US";
@@ -62,11 +64,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
           SELECT context_code, date, state, transition, source_class, data_freshness_json
           FROM market_context_daily
           WHERE market = ?
+            AND context_code IN (?, ?, ?, ?)
+            AND source_class = 'official'
           ORDER BY date DESC, context_code
           LIMIT ?
         `,
       )
-        .bind(market, limit * 8)
+        .bind(market, ...ACTIVE_MARKET_CONTEXT_CODES, limit * 8)
         .all<ContextHistoryRow>(),
       env.DB.prepare(
         `

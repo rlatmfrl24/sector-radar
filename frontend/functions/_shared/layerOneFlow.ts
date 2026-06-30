@@ -107,9 +107,9 @@ export function buildLayerOneFlowSnapshot({
   const warnings: string[] = [];
 
   if (spy.length === 0) warnings.push("benchmark_tape_unavailable");
-  if (rsp.length === 0) warnings.push("rsp_equal_weight_proxy_unavailable");
-  if (iwm.length === 0) warnings.push("iwm_smallcap_proxy_unavailable");
-  if (vix.length === 0) warnings.push("vix_proxy_unavailable");
+  if (rsp.length === 0) warnings.push("rsp_equal_weight_supplement_unavailable");
+  if (iwm.length === 0) warnings.push("iwm_smallcap_supplement_unavailable");
+  if (vix.length === 0) warnings.push("vix_supplement_unavailable");
 
   const ret1d = returnOverBars(spy, 1);
   const ret1w = returnOverBars(spy, 5);
@@ -335,7 +335,7 @@ function buildNarrative({
     state === "constructive" ? "시장 tape는 우호적" : state === "caution" ? "시장 tape는 방어 확인이 필요" : "시장 tape는 혼조";
   const breadthText =
     breadthState === "broad" ? "breadth가 넓게 받쳐줍니다" : breadthState === "narrow" ? "breadth가 좁아져 확인이 필요합니다" : "breadth는 중립적입니다";
-  const vixText = vixLatest === null ? "VIX proxy는 아직 비어 있습니다" : `VIX ${vixLatest.toFixed(1)} 기준으로 변동성 상태를 함께 봅니다`;
+  const vixText = vixLatest === null ? "VIX 보조 지표는 아직 비어 있습니다" : `VIX ${vixLatest.toFixed(1)} 기준으로 변동성 상태를 함께 봅니다`;
   return `${stateText}이고 ${breadthText}. ${vixText}. 전환은 ${transition}으로 분리해 표시합니다.`;
 }
 

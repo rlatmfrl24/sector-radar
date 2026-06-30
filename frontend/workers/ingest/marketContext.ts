@@ -14,19 +14,7 @@ export const FRED_SERIES_IDS = [
   "WRESBAL",
 ] as const;
 
-export const KRX_SERIES_IDS = [
-  "KRX:FOREIGN_NET_BUY",
-  "KRX:INSTITUTION_NET_BUY",
-  "KRX:CREDIT_BALANCE",
-  "KRX:SHORT_SELLING_VALUE",
-  "KRX:EQUITY_TRADE_VALUE",
-  "KRX:EQUITY_TRADE_VOLUME",
-  "KRX:EQUITY_MARKET_CAP",
-  "KRX:KOSPI_TRADE_VALUE",
-  "KRX:KOSPI_MARKET_CAP",
-  "KRX:KOSDAQ_TRADE_VALUE",
-  "KRX:KOSDAQ_MARKET_CAP",
-] as const;
+export const KRX_SERIES_IDS = [] as const;
 
 interface DailyBar {
   date: string;
@@ -59,9 +47,6 @@ export function buildMarketContextFromSeriesRows(
   return LAYER_TWO_INPUTS.map((input) => {
     const official = buildOfficialCard(input.code, scalars, computedAt);
     const proxy = buildYahooProxyCard(input, prices, computedAt);
-    if (official && proxy && shouldUseProxyFallback(input.code, official, proxy, computedAt)) {
-      return withOfficialStaleWarning(proxy, official);
-    }
     if (official) return official;
     if (proxy) return proxy;
 
@@ -82,42 +67,6 @@ export function buildMarketContextFromSeriesRows(
       },
     };
   });
-}
-
-function shouldUseProxyFallback(
-  code: string,
-  official: MarketContextCard,
-  proxy: MarketContextCard,
-  computedAt: string,
-) {
-  const officialDate = stringOrNull(official.data_freshness.latest_date);
-  const proxyDate = stringOrNull(proxy.data_freshness.latest_date);
-  if (!officialDate || !proxyDate) return false;
-  if (!isStaleForContext(code, officialDate, computedAt)) return false;
-  if (isStaleForContext(code, proxyDate, computedAt)) return false;
-  return proxyDate > officialDate;
-}
-
-function withOfficialStaleWarning(proxy: MarketContextCard, official: MarketContextCard): MarketContextCard {
-  const officialDate = stringOrNull(official.data_freshness.latest_date);
-  return {
-    ...proxy,
-    evidence: {
-      ...proxy.evidence,
-      official_latest_date: officialDate,
-    },
-    source: `${proxy.source}; official stale fallback from ${official.source}`,
-    warnings: uniqueWarnings([
-      "official_source_stale_using_yahoo_proxy",
-      ...(officialDate ? [`official_latest_date=${officialDate}`] : []),
-      ...proxy.warnings,
-    ]),
-    data_freshness: {
-      ...proxy.data_freshness,
-      official_latest_date: officialDate,
-      official_source_class: official.source_class,
-    },
-  };
 }
 
 export function marketContextCardsToRows(
@@ -151,9 +100,7 @@ function buildOfficialCard(
   if (code === "S01") return centralBankPolicy(scalars, computedAt);
   if (code === "S02") return dollarFxGate(scalars, computedAt);
   if (code === "S03") return globalCredit(scalars, computedAt);
-  if (code === "S04") return krxForeignFlow(scalars, computedAt);
   if (code === "S05") return reserveBalance(scalars, computedAt);
-  if (code === "S06") return krxCreditLeverage(scalars, computedAt);
   return null;
 }
 
@@ -272,35 +219,6 @@ function globalCredit(scalars: ScalarSeriesMap, computedAt: string): MarketConte
   });
 }
 
-function krxForeignFlow(scalars: ScalarSeriesMap, computedAt: string): MarketContextCard | null {
-  const foreign = latestScalar(scalars, "KRX:FOREIGN_NET_BUY");
-  const institution = latestScalar(scalars, "KRX:INSTITUTION_NET_BUY");
-  if (!foreign && !institution) return null;
-
-  const foreignSum = scalarSum(scalars, "KRX:FOREIGN_NET_BUY", 5);
-  const institutionSum = scalarSum(scalars, "KRX:INSTITUTION_NET_BUY", 5);
-  const total = (foreignSum ?? 0) + (institutionSum ?? 0);
-  const state = total > 0 ? "supportive" : total < 0 ? "pressure" : "neutral";
-
-  return officialCard({
-    code: "S04",
-    title: "외국인 자금",
-    meaning: "수급 게이트와 한계매수자 추적",
-    source: "KRX OpenAPI: investor flow",
-    state,
-    transition: transitionFromState(state),
-    evidence: {
-      foreign_net_buy_latest: round(foreign?.value),
-      foreign_net_buy_5obs_sum: round(foreignSum),
-      institution_net_buy_latest: round(institution?.value),
-      institution_net_buy_5obs_sum: round(institutionSum),
-      latest_date: latestDate([foreign, institution]),
-    },
-    warnings: ["US Sector Radar에서는 참고 카드이며 KOSPI 확장 시 핵심 입력으로 승격합니다."],
-    computedAt,
-  });
-}
-
 function reserveBalance(scalars: ScalarSeriesMap, computedAt: string): MarketContextCard | null {
   const reserve = latestScalar(scalars, "FRED:WRESBAL");
   if (!reserve) return null;
@@ -310,8 +228,8 @@ function reserveBalance(scalars: ScalarSeriesMap, computedAt: string): MarketCon
 
   return officialCard({
     code: "S05",
-    title: "예비금·현금 Proxy",
-    meaning: "연준 지급준비금으로 현금성 여력을 proxy",
+    title: "은행 지급준비금",
+    meaning: "연준 지급준비금으로 현금성 여력을 확인",
     source: "FRED: WRESBAL",
     state,
     transition: transitionFromState(state),
@@ -320,40 +238,7 @@ function reserveBalance(scalars: ScalarSeriesMap, computedAt: string): MarketCon
       WRESBAL_change_4obs: round(reserveChange),
       latest_date: reserve.date,
     },
-    warnings: ["WRESBAL은 은행 지급준비금 proxy이며 공식 MMF 총자산으로 표시하지 않습니다."],
-    computedAt,
-  });
-}
-
-function krxCreditLeverage(scalars: ScalarSeriesMap, computedAt: string): MarketContextCard | null {
-  const credit = latestScalar(scalars, "KRX:CREDIT_BALANCE");
-  const shortSelling = latestScalar(scalars, "KRX:SHORT_SELLING_VALUE");
-  if (!credit && !shortSelling) return null;
-
-  const creditChange = scalarChange(scalars, "KRX:CREDIT_BALANCE", 5);
-  const shortChange = scalarChange(scalars, "KRX:SHORT_SELLING_VALUE", 5);
-  const state =
-    isPositiveChange(creditChange) || isPositiveChange(shortChange)
-      ? "pressure"
-      : isNegativeChange(creditChange) && isNegativeChange(shortChange)
-        ? "supportive"
-        : "neutral";
-
-  return officialCard({
-    code: "S06",
-    title: "KRX 신용·공매도 후보",
-    meaning: "마진 과열과 반대매매 위험",
-    source: "KRX OpenAPI: credit and short-selling candidates",
-    state,
-    transition: transitionFromState(state),
-    evidence: {
-      credit_balance_latest: round(credit?.value),
-      credit_balance_change_5obs: round(creditChange),
-      short_selling_latest: round(shortSelling?.value),
-      short_selling_change_5obs: round(shortChange),
-      latest_date: latestDate([credit, shortSelling]),
-    },
-    warnings: ["KRX 원천 필드 가용성은 계정 권한과 endpoint에 따라 달라질 수 있습니다."],
+    warnings: ["WRESBAL은 공식 MMF 총자산이 아니라 은행 지급준비금입니다."],
     computedAt,
   });
 }
@@ -511,12 +396,6 @@ function scalarReturn(scalars: ScalarSeriesMap, seriesId: string, periods: numbe
   return prior > 0 ? latest / prior - 1 : null;
 }
 
-function scalarSum(scalars: ScalarSeriesMap, seriesId: string, periods: number) {
-  const values = scalars[normalize(seriesId)] ?? [];
-  if (values.length === 0) return null;
-  return values.slice(-periods).reduce((sum, point) => sum + point.value, 0);
-}
-
 function returnOverBars(bars: DailyBar[], periods: number) {
   const closes = bars.map((bar) => bar.close).filter(isFiniteNumber);
   if (closes.length <= periods) return null;
@@ -543,23 +422,6 @@ function latestDate(values: Array<{ date: string } | null | undefined>) {
 function contextDate(card: MarketContextCard, computedAt: string) {
   const latest = card.data_freshness.latest_date;
   return typeof latest === "string" && latest ? latest : computedAt.slice(0, 10);
-}
-
-function isStaleForContext(code: string, latestDate: string, computedAt: string) {
-  const threshold = code === "S01" || code === "S05" ? 10 : 3;
-  const latest = Date.UTC(
-    Number(latestDate.slice(0, 4)),
-    Number(latestDate.slice(5, 7)) - 1,
-    Number(latestDate.slice(8, 10)),
-  );
-  const currentDate = computedAt.slice(0, 10);
-  const current = Date.UTC(
-    Number(currentDate.slice(0, 4)),
-    Number(currentDate.slice(5, 7)) - 1,
-    Number(currentDate.slice(8, 10)),
-  );
-  if (!Number.isFinite(latest) || !Number.isFinite(current)) return true;
-  return Math.floor((current - latest) / 86_400_000) > threshold;
 }
 
 function transitionFromState(state: string) {
@@ -612,8 +474,4 @@ function stringOrNull(value: unknown) {
 
 function normalize(value: string) {
   return value.trim().toUpperCase();
-}
-
-function uniqueWarnings(values: string[]) {
-  return [...new Set(values.filter(Boolean))];
 }

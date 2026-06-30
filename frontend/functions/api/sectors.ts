@@ -277,7 +277,7 @@ function buildConcentration(sectors: ReturnType<typeof toSectorSnapshot>[]) {
   const top3 = normalized.slice(0, 3).reduce((sum, item) => sum + item.share, 0);
 
   return {
-    method: "rs_leadership_proxy",
+    method: "rs_leadership_estimate",
     source_class: "proxy",
     hhi: round(hhi),
     effective_sector_count: round(1 / hhi),
@@ -286,7 +286,7 @@ function buildConcentration(sectors: ReturnType<typeof toSectorSnapshot>[]) {
     top3_contribution: round(top3),
     warnings: [
       "market_cap_contribution_not_available",
-      ...(hhi > 0.35 || top3 > 0.75 ? ["narrow_leadership_proxy"] : []),
+      ...(hhi > 0.35 || top3 > 0.75 ? ["narrow_leadership_estimate"] : []),
     ],
   };
 }
@@ -318,7 +318,7 @@ function addDays(date: string, days: number) {
 
 function emptyConcentration(warnings: string[] = ["insufficient_sector_snapshots"]) {
   return {
-    method: "rs_leadership_proxy",
+    method: "rs_leadership_estimate",
     source_class: "proxy",
     hhi: null,
     effective_sector_count: null,

@@ -87,7 +87,6 @@ sectors:
       - PSX
       - VLO
       - OXY
-      - HES
   XLV:
     name: Health Care
     group: defensive

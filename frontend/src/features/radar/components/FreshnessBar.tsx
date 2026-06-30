@@ -12,9 +12,9 @@ import type {
 export function FreshnessBar({ data }: { data: SectorsResponse }) {
   const [expanded, setExpanded] = useState(false);
   const connections = data.data_connections ?? { yahoo_finance: data.data_connection };
-  const entries = Object.entries(connections);
   const freshness = data.source_freshness ?? [];
   const activeFreshness = freshness.filter(isActiveFreshness);
+  const entries = providerEntries(connections, activeFreshness);
   const staleCount = activeFreshness.length
     ? activeFreshness.filter((item) => item.status !== "live").length
     : entries.filter(([, connection]) => connection.mode !== "live").length;
@@ -74,7 +74,7 @@ export function ContextRail({ data }: { data: SectorsResponse }) {
       <div>
         <Activity size={14} />
         <span>Market Context</span>
-        <strong>{officialCount}/{activeContext.length} official</strong>
+        <strong>공식 {officialCount}/{activeContext.length}</strong>
       </div>
       <i />
       <div>
@@ -97,7 +97,7 @@ export function ContextRail({ data }: { data: SectorsResponse }) {
       <small>
         {reconciliation?.narrative ??
           (concentration?.effective_sector_count
-            ? `effective sectors ${concentration.effective_sector_count.toFixed(1)} · proxy concentration`
+            ? `effective sectors ${concentration.effective_sector_count.toFixed(1)} · RS 기반 집중도 보조 추정`
             : "concentration pending")}
       </small>
     </section>
@@ -177,7 +177,9 @@ function SourceFreshnessRow({
   provider: SourceFreshnessProvider;
 }) {
   const warning = warningLabel(item.warning);
-  const sourceLabel = `${sourceClassLabel(item.source_class)} · ${sourceSeriesSummary(item)}`;
+  const sourceKind = sourceKindLabel(item);
+  const sourceDetail = sourceSeriesSummary(item);
+  const sourceLabel = sourceDetail === sourceKind ? sourceKind : `${sourceKind} · ${sourceDetail}`;
   const latestLabel = formatDateShort(item.latest_date);
   const frequencyLabelText = frequencyShortLabel(item.frequency);
   const nextLabel = nextCollectionShortLabel(provider, connection);
@@ -190,7 +192,7 @@ function SourceFreshnessRow({
     >
       <div className="source-row-title">
         <strong>{item.label}</strong>
-        <span title={`${sourceClassLabel(item.source_class)} · ${sourceSeriesLabel(item)}`}>{sourceLabel}</span>
+        <span title={`${sourceKind} · ${sourceSeriesLabel(item)}`}>{sourceLabel}</span>
       </div>
       <dl className="source-row-details">
         <div title={`데이터 기준일: ${item.latest_date ?? "준비 중"}`}>
@@ -248,6 +250,13 @@ function groupFreshness(items: SourceFreshnessItem[]) {
     groups.set(item.provider, group);
   }
   return [...groups.entries()];
+}
+
+function providerEntries(connections: DataConnections, activeFreshness: SourceFreshnessItem[]) {
+  const providersWithActiveRows = new Set(activeFreshness.map((item) => item.provider));
+  const entries = Object.entries(connections) as Array<[SourceFreshnessProvider, DataConnection]>;
+  if (activeFreshness.length === 0) return entries;
+  return entries.filter(([provider]) => provider === "yahoo_finance" || providersWithActiveRows.has(provider));
 }
 
 function isActiveFreshness(item: SourceFreshnessItem) {
@@ -377,6 +386,7 @@ function sourceTooltip(item: SourceFreshnessItem, provider: SourceFreshnessProvi
   return [
     item.label,
     `제공처: ${providerLabel(provider)}`,
+    `표시 성격: ${sourceKindLabel(item)}`,
     `수집 대상: ${sourceSeriesLabel(item)}`,
     `데이터 기준일: ${item.latest_date ?? "준비 중"}`,
     `수집 주기: ${frequencyLabel(item.frequency)}`,
@@ -455,21 +465,34 @@ function formatKstMini(value: string, includeDay = false) {
   return `${parts.hour}:${parts.minute}`;
 }
 
+function sourceKindLabel(item: SourceFreshnessItem) {
+  if (item.provider === "yahoo_finance" && item.id.startsWith("provider:")) return "가격 수집";
+  if (item.provider === "yahoo_finance" && item.id.startsWith("snapshot:")) return "계산 스냅샷";
+  if (item.provider === "yahoo_finance" && item.source_class === "proxy") return "비공식 가격";
+  return sourceClassLabel(item.source_class);
+}
+
 function sourceClassLabel(sourceClass: SourceFreshnessItem["source_class"]) {
   if (sourceClass === "official") return "공식 원천";
-  if (sourceClass === "proxy") return "프록시";
+  if (sourceClass === "proxy") return "보조 지표";
   if (sourceClass === "manual") return "수동 입력";
   if (sourceClass === "held") return "보류";
   return sourceClass;
 }
 
 function sourceSeriesLabel(item: SourceFreshnessItem) {
-  return item.series_id ?? sourceClassLabel(item.source_class);
+  return item.series_id ?? sourceKindLabel(item);
 }
 
 function sourceSeriesSummary(item: SourceFreshnessItem) {
   const series = item.series_id;
-  if (!series) return sourceClassLabel(item.source_class);
+  if (!series) {
+    if (item.id.startsWith("snapshot:")) return "섹터 계산 결과";
+    if (item.id.startsWith("provider:") && item.provider === "yahoo_finance") return "Yahoo chart";
+    if (item.id.startsWith("provider:") && item.provider === "fred") return "FRED API";
+    if (item.id.startsWith("provider:") && item.provider === "krx_openapi") return "KRX OpenAPI";
+    return sourceKindLabel(item);
+  }
   const parts = series.split(",").map((value) => value.trim()).filter(Boolean);
   if (parts.length > 1) return `${parts.length}개 시리즈`;
   if (series.includes(":")) return series.split(":").at(-1) ?? series;
@@ -482,7 +505,7 @@ function warningLabel(warning?: string) {
     return "예시 데이터 확인용입니다. 실제 판단에는 운영 수집 데이터가 필요합니다.";
   }
   if (warning.includes("official_source_not_connected")) {
-    return "공식 원천이 아직 연결되지 않아 프록시 데이터로만 확인 중입니다.";
+    return "공식 원천이 아직 연결되지 않아 대체 지표로만 확인 중입니다.";
   }
   if (warning.includes("US Sector Radar")) {
     return "US 섹터 레이더에서는 참고 카드로만 사용합니다.";

@@ -90,14 +90,15 @@ Implementation plan:
 
 1. Add `source_freshness` to `/api/sectors` or create `GET /api/source/freshness`.
 2. Build it from `series_daily`, `market_context_daily`, and `data_refresh_status`.
-3. Show rows grouped by provider: Yahoo, FRED, KRX, manual.
+3. Show rows grouped by active provider: Yahoo and FRED for the US Sector Radar MVP. Keep KRX/manual hidden unless an active card actually uses them.
 4. Mark stale with provider-specific cadence, not one global threshold.
 
 Definition of done:
 
 ```text
 Every Layer 2 card can be traced to source, date, provider, and stale status.
-Missing KRX/FRED data appears as unavailable, not as zero or neutral.
+Missing FRED data appears as unavailable, not as zero or neutral.
+KRX-only candidates stay out of active US Sector Radar until a directly useful source is connected.
 ```
 
 ### 4.2 Trigger Watchlist
@@ -122,7 +123,7 @@ Initial watchlist items:
 | Indicator | Trigger | Meaning | Source |
 |---|---|---|---|
 | WALCL | weekly contraction persists | liquidity support fading | FRED |
-| DXY / USDKRW | dollar uptrend accelerates | risk-asset pressure | FRED/Yahoo |
+| DXY / USDKRW | dollar uptrend accelerates | risk-asset pressure | FRED |
 | HY OAS / VIX | spread + volatility expansion | credit regime pressure | FRED |
 | Breadth | leaders rise while breadth narrows | late-cycle or mega-cap dependence | Yahoo holdings |
 | KRX foreign flow | sustained net selling | deferred reference gate | excluded from active watchlist until a licensed or KRX investor-flow source is connected |
@@ -206,7 +207,7 @@ Sector Radar currently has an RS leadership proxy concentration. It does not yet
 
 Implementation plan:
 
-1. Keep current `rs_leadership_proxy` clearly labeled.
+1. Keep current `rs_leadership_estimate` clearly labeled as a supplemental estimate.
 2. Add official market-cap contribution only when a reliable source is selected.
 3. Store derived concentration in a separate daily table or in `sector_metrics_daily.source_metrics_json`.
 4. Use concentration as a warning input, not as an average score.
@@ -228,7 +229,7 @@ Definition of done:
 
 ```text
 Mega-cap dependence can be identified from breadth plus concentration.
-The UI says proxy when market-cap data is unavailable.
+The UI says supplemental estimate when market-cap data is unavailable.
 ```
 
 ### 4.5 Verification Scorecard Panel
@@ -390,7 +391,7 @@ Tests:
 
 ```text
 Missing FRED key -> FRED rows stale/unavailable.
-Missing KRX key -> KRX rows unavailable, not neutral.
+KRX key missing -> no active US Layer 2 impact while KRX context refresh is disabled.
 Fresh Yahoo price rows -> Yahoo rows live.
 ```
 

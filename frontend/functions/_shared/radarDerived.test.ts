@@ -35,38 +35,22 @@ describe("radar derived API fields", () => {
     });
   });
 
-  it("keeps KRX and manual gaps out of neutral states", () => {
-    const input = baseInput({
-      marketContext: [
-        context({
-          code: "S04",
-          data_freshness: { latest_date: null, date: "2026-06-25" },
-          state: "held",
-          transition: "external_source_needed",
-          source_class: "held",
-          warnings: ["official_source_needed"],
-        }),
-      ],
-    });
+  it("does not surface KRX provider rows when no active context uses KRX", () => {
+    const derived = buildRadarDerived(baseInput());
 
-    const derived = buildRadarDerived(input);
-    expect(derived.source_freshness.find((item) => item.id === "context:S04")).toMatchObject({
-      latest_date: undefined,
-      status: "manual_check",
-      source_class: "held",
-    });
+    expect(derived.source_freshness.find((item) => item.id === "provider:krx_openapi")).toBeUndefined();
+    expect(derived.source_freshness.find((item) => item.id === "context:S04")).toBeUndefined();
     expect(derived.watchlist.find((item) => item.id === "krx_foreign_flow")).toBeUndefined();
-    expect(derived.watchlist.find((item) => item.id === "manual_catalyst_ledger")).toBeUndefined();
   });
 
-  it("does not treat a neutral weakening proxy as a risk pressure context", () => {
+  it("does not treat a neutral weakening supplemental input as a risk pressure context", () => {
     const input = baseInput({
       marketContext: [
         context({ code: "S01", state: "neutral", transition: "stable", source_class: "official" }),
         context({ code: "S02", state: "neutral", transition: "stable", source_class: "official" }),
         context({ code: "S03", state: "neutral", transition: "stable", source_class: "official" }),
         context({
-          code: "S06",
+          code: "S05",
           state: "neutral",
           transition: "weakening",
           source_class: "proxy",
@@ -83,23 +67,23 @@ describe("radar derived API fields", () => {
     const reconciliation = buildContextReconciliation(input, buildTriggerWatchlist(input));
 
     expect(reconciliation.evidence.pressure_contexts).toBeNull();
-    expect(reconciliation.warnings).not.toContain("S06");
+    expect(reconciliation.warnings).not.toContain("S05");
     expect(reconciliation.state).toBe("supportive");
   });
 
-  it("labels proxy context freshness with the actual proxy symbols", () => {
+  it("labels official context freshness with direct FRED series ids", () => {
     const input = baseInput({
       marketContext: [
         context({
           code: "S02",
-          source_class: "proxy",
-          source: "Yahoo DXY-USDKRW fallback",
+          source_class: "official",
+          source: "FRED: DEXKOUS, DTWEXBGS",
           data_freshness: { latest_date: "2026-06-24" },
         }),
         context({
-          code: "S06",
-          source_class: "proxy",
-          source: "Yahoo leverage ETF proxy",
+          code: "S05",
+          source_class: "official",
+          source: "FRED: WRESBAL",
           data_freshness: { latest_date: "2026-06-24" },
         }),
       ],
@@ -108,14 +92,38 @@ describe("radar derived API fields", () => {
     const freshness = buildSourceFreshness(input);
 
     expect(freshness.find((item) => item.id === "context:S02")).toMatchObject({
-      provider: "yahoo_finance",
-      series_id: "DX-Y.NYB,KRW=X",
-      source_class: "proxy",
+      provider: "fred",
+      series_id: "FRED:DEXKOUS",
+      source_class: "official",
     });
-    expect(freshness.find((item) => item.id === "context:S06")).toMatchObject({
-      provider: "yahoo_finance",
-      series_id: "TQQQ,SQQQ,SPXL,SPXS",
-      source_class: "proxy",
+    expect(freshness.find((item) => item.id === "context:S05")).toMatchObject({
+      provider: "fred",
+      series_id: "FRED:WRESBAL",
+      source_class: "official",
+    });
+  });
+
+  it("publishes Layer 1 and Layer 2 source expansion roadmap", () => {
+    const derived = buildRadarDerived(baseInput());
+
+    expect(derived.source_expansion.find((item) => item.id === "l1_market_tape")).toMatchObject({
+      layer: "layer1",
+      status: "active",
+      source_kind: "price",
+    });
+    expect(derived.source_expansion.find((item) => item.id === "l2_policy")).toMatchObject({
+      layer: "layer2",
+      provider: "fred",
+      status: "active",
+      source_kind: "official",
+    });
+    expect(derived.source_expansion.find((item) => item.id === "l2_treasury_dts")).toMatchObject({
+      layer: "layer2",
+      provider: "treasury_fiscaldata",
+      status: "candidate",
+    });
+    expect(derived.source_expansion.find((item) => item.id === "l2_krx_flow")).toMatchObject({
+      status: "deferred",
     });
   });
 
@@ -270,7 +278,7 @@ function concentration(overrides: Partial<ConcentrationLike> = {}): Concentratio
   return {
     effective_sector_count: 3,
     hhi: 0.33,
-    method: "rs_leadership_proxy",
+    method: "rs_leadership_estimate",
     source_class: "proxy",
     top1: "SMH",
     top1_contribution: 0.45,

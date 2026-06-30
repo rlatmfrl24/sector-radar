@@ -107,6 +107,8 @@ Overview card:
   - reconciliation label
 
 Evidence panel:
+  - indicator guide cards with meaning, current value, current readout
+  - small meter visualization for current data value or state
   - RRG quadrant mix
   - RS distribution sparkline
   - leading/rotation cluster
@@ -114,6 +116,51 @@ Evidence panel:
   - breadth profile
   - next checkpoints
 ```
+
+Layer 1/2의 기본 정보 문법은 다음을 따른다.
+
+```text
+Left:
+  - 전체 판단
+  - 현재 결과
+  - 왜 그렇게 해석하는지
+  - 다음 확인 지점
+
+Right:
+  - 지표별 의미
+  - 현재 수치
+  - 현재 판단
+  - 작은 막대/분포형 시각화
+  - 데이터 출처는 카드 툴팁이나 `출처 정보` 힌트에 부착
+```
+
+전문 용어는 첫 노출에서 단독으로 쓰지 않는다. 예를 들어 `proxy`, `HHI`, `RRG` 같은 내부 용어는 `보조 지표`, `집중도`, `상대강도 경로`처럼 사용자가 먼저 이해할 수 있는 표현과 함께 둔다.
+
+데이터 소스는 기본 본문에서 별도 카드 그룹으로 노출하지 않는다. 사용자가 먼저 읽어야 하는 것은 판단과 지표 해석이며, 출처·갱신·공식/보조 여부는 다음 위치로 낮춘다.
+
+```text
+Primary screen:
+  - 지표 카드 안의 클릭형 `출처 정보` disclosure
+  - disclosure 안에 `요청 정보`, `요청/수집 항목`, `받아온 결과`, `최신 기준`, `주의 메모` 표시
+
+Diagnostics:
+  - 상단 수집 내역 / freshness panel
+  - 개발 문서의 data-source expansion plan
+```
+
+Layer 2는 `데이터별 상세 지표`, `마켓 컨텍스트`, `리스크 트리거`를 분리하지 않는다. 같은 수집값을 반복하지 않도록 `마켓 컨텍스트` 카드 안에 다음을 통합한다.
+
+```text
+Market context card:
+  - 지표 의미
+  - 현재 수치
+  - 현재 판단
+  - 해석
+  - 관련 리스크 트리거
+  - 클릭형 출처 정보
+```
+
+Layer 1/2의 좌측 패널은 사용자가 먼저 읽는 판단 영역이다. Layer 1은 판단 관련 문장을 `흐름 최종 판단`으로 병합하고, 우측은 근거와 상세 지표를 확인하는 보조 영역으로 유지한다. Layer 2의 요약 문장은 별도 카드처럼 감싸지 말고 요약 제목 아래의 리드 텍스트로 둔다. `다음 확인` 같은 모호한 표현은 피하고 `확인 체크리스트`처럼 무엇을 확인하는지 드러나는 제목을 사용한다.
 
 벤치마크 UI에서 흡수할 수 있는 방향은 "요약 문장 + 근거 카드"의 분리입니다. Layer 1은 가격 흐름, 폭, 변동성, 정합성을 빠르게 확인하는 곳이므로 다음 데이터는 후속 수집 후보로 둡니다.
 
