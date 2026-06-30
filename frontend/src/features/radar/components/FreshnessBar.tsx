@@ -426,11 +426,11 @@ function contextRailItems(
           label: "패턴 진단",
           value: patternTotal > 0 ? `${patternReady}/${patternTotal} 완료` : `${data.sectors.length} sectors`,
         },
-        { icon: "shield" as const, label: "확률 게이트", value: validation?.expose_probability ? "표시" : "숨김" },
+        { icon: "shield" as const, label: "표본 확률", value: validation?.expose_probability ? "표시" : "대기" },
       ],
       narrative:
         validation?.status === "historical_ready"
-          ? `Layer 4는 ${validation.coverage.sector_history_days}일 이력으로 패턴 진단을 표시 중입니다. 확률 보정은 별도 단계입니다.`
+          ? `Layer 4는 ${validation.coverage.sector_history_days}일 이력으로 패턴 진단과 표본 관측 확률을 신뢰도와 함께 표시 중입니다.`
           : contextDays > 0
             ? "Layer 4는 sector snapshot, history, market context coverage를 분리해 확인합니다."
             : "Layer 4는 검증 입력과 replay 가능 범위를 분리해 확인합니다.",
@@ -456,10 +456,10 @@ function contextRailItems(
 }
 
 function validationRailValue(validation: ValidationResponse | null | undefined, fallbackExposeProbability: boolean) {
-  if (validation?.status === "historical_ready") return "이력 진단 완료";
+  if (validation?.status === "historical_ready") return validation.expose_probability ? "표본 확률 표시" : "이력 진단 완료";
   if (validation?.status === "insufficient_history") return "표본 부족";
   if (validation?.status === "unvalidated") return "검증 전";
-  return fallbackExposeProbability ? "확률 표시" : "검증 전";
+  return fallbackExposeProbability ? "표본 확률 표시" : "검증 전";
 }
 
 function providerLabel(provider: string) {

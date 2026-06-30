@@ -282,10 +282,12 @@ export type HistoryTimeframe = "30D" | "90D" | "180D";
 export type ValidationStatus = "historical_ready" | "insufficient_history" | "unvalidated";
 export type ValidationReplayStatus = "collecting" | "limited" | "ready";
 export type ValidationPatternStatus = "collecting" | "ready" | "thin_sample";
+export type ValidationProbabilityMode = "hidden" | "sample_observed";
+export type ValidationReliabilityLabel = "low" | "medium" | "high";
 
 export interface ValidationResponse {
   status: ValidationStatus;
-  expose_probability: false;
+  expose_probability: boolean;
   scorecard: {
     sector_rrg_ic: number | null;
     pattern_hit_rate: number | null;
@@ -314,9 +316,16 @@ export interface ValidationResponse {
     fwd_rel_60d_median: number | null;
     max_drawdown_20d_median: number | null;
     leading_after_20d_count: number;
+    observed_probability_20d?: number | null;
+    observed_probability_60d?: number | null;
+    positive_20d_count?: number;
+    positive_60d_count?: number;
+    reliability_label?: ValidationReliabilityLabel;
+    reliability_score?: number;
     status: ValidationPatternStatus;
     next_step: string;
   }>;
+  probability_mode?: ValidationProbabilityMode;
   schedule?: {
     api: string;
     cron: string;

@@ -35,13 +35,19 @@ describe("API fallback responses", () => {
 
     await expect(loadValidation()).resolves.toMatchObject({
       status: "historical_ready",
-      expose_probability: false,
+      expose_probability: true,
+      probability_mode: "sample_observed",
       coverage: {
         sector_history_days: 126,
         sector_snapshots: 1512,
       },
       pattern_diagnostics: expect.arrayContaining([
-        expect.objectContaining({ pattern: "Strong Leader", status: "ready" }),
+        expect.objectContaining({
+          observed_probability_20d: 67,
+          pattern: "Strong Leader",
+          reliability_label: "high",
+          status: "ready",
+        }),
       ]),
       limitations: expect.arrayContaining([
         "Temporary Layer 4 fixture is displayed when validation data is unavailable.",

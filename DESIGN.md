@@ -129,7 +129,7 @@ Compact status rail under the freshness bar:
 Layer 1: Market Tape / Breadth / Risk-Vol / 검증
 Layer 2: Market Context / Participation / Risk Trigger / 검증
 Layer 3: RS 리더 / 순환 후보 / Reconciliation / 검증
-Layer 4: 검증 / Replay / Coverage / 확률 게이트
+Layer 4: 검증 / Replay / Coverage / 표본 관측 확률
 ```
 
 ### Layer 3 Leadership Flow
@@ -162,20 +162,18 @@ validation status
 
 ### Layer 4 Validation Lab
 
-Layer 4 is a historical diagnostics and probability-gate screen, not a forecasting screen.
+Layer 4 is a historical diagnostics and sample-observed probability screen, not a forecasting or recommendation screen.
 
 ```text
-검증 진행 단계
-검증 상태
-확률 게이트
-history coverage
-market context coverage
-Replay 가능 범위
-pattern diagnostics
-scheduled audit
+통합 검증 요약
+  데이터 수집 / Replay / 패턴 진단 / 표본 관측치
+  Replay 30D / 90D / 180D coverage
+  history coverage / context coverage
+가로형 pattern diagnostics chart
+데이터 제한이 있을 때만 data limits
 ```
 
-Show the four steps explicitly: 데이터 수집, Replay, 패턴 진단, 확률 보정. Use `이력 진단 완료`, `Replay 가능`, `패턴 진단 완료`, `확률 보정 대기`, `확률 숨김` as status language when diagnostics are available. Use `데이터 제한` only for real blockers such as missing history or unavailable validation data. Do not visualize unvalidated probability-like gauges.
+Show the four steps inside one overview card: 데이터 수집, Replay, 패턴 진단, 표본 관측치. Replay availability belongs inside the Replay status cell, not as a separate card. Use `이력 진단 완료`, `Replay 가능`, `패턴 진단 완료`, `표본 확률 표시`, `표본 확률 대기` as status language. Use `데이터 제한` only for real blockers such as missing history or unavailable validation data. Do not visualize the value as a forecast gauge; show it as horizontal pattern diagnostics with reliability.
 
 ## 7. Interaction Rules
 
@@ -196,6 +194,8 @@ Use:
 전환 관찰 구간
 검증 전
 규칙 정합성
+표본 관측 확률
+신뢰도
 리서치 관점
 ```
 
@@ -210,7 +210,7 @@ Avoid:
 목표가
 ```
 
-If numeric conviction is shown, label it as rule alignment, not probability.
+If numeric conviction is shown, label it as rule alignment, not probability. If Layer 4 shows a probability-like number, label it as sample-observed probability with reliability.
 
 ## 9. Validation Checklist
 
@@ -222,8 +222,8 @@ Before shipping UI changes:
 [ ] Layer 1/2/3/4 tabs render
 [ ] FreshnessBar scopes source rows by active Layer
 [ ] Layer 3 separates current RS leader and momentum leader
-[ ] Layer 4 shows validation coverage without recommendation wording
+[ ] Layer 4 shows validation coverage, sample-observed probability, and reliability without recommendation wording
 [ ] No console errors in browser smoke test
 [ ] No clipped topbar or tab text on desktop/mobile
-[ ] No probability, recommendation, or profit promise wording
+[ ] No calibrated-looking probability, recommendation, or profit promise wording
 ```

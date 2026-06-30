@@ -228,7 +228,8 @@ Layer 3:
 Layer 4:
   /api/validation diagnostics와 /api/history coverage로 검증 게이트, replay 준비도, pattern diagnostics를 읽는다.
   /api/validation/status와 run_log의 layer4_validation_audit으로 정기 점검 상태를 읽는다.
-  calibration 전까지 확률, 승률, 기대수익률 문구는 표시하지 않는다.
+  calibration 전 예측 확률, 승률, 기대수익률 문구는 표시하지 않는다.
+  Layer 4 안에서는 sample-observed probability와 reliability를 historical diagnostics로만 표시한다.
 ```
 
 수집원 표시 규칙:
@@ -241,7 +242,7 @@ ContextRail:
   Layer 1은 market tape/breadth/risk/validation,
   Layer 2는 market context/participation/risk trigger/validation,
   Layer 3는 RS 리더/순환 후보/reconciliation/validation,
-  Layer 4는 검증/Replay/Coverage/확률 게이트를 표시한다.
+  Layer 4는 검증/Replay/패턴 진단/표본 확률을 표시한다.
 ```
 
 ## 9. 환경 설정

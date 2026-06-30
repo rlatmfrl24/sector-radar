@@ -1,6 +1,6 @@
 # 10. Deferred Stock Engine Expansion Reference
 
-이 문서는 현재 구현 대상이 아니라 Sector Radar 검증 이후 참고할 확장 메모입니다. 현재 P0/P1 작업은 sector-level dashboard, source freshness, replay/validation, manual catalyst ledger입니다. Stock Candidate Funnel은 sector validation scaffolding 이후에만 진행합니다.
+이 문서는 현재 구현 대상이 아니라 Sector Radar 검증 이후 참고할 확장 메모입니다. 현재 P0/P1 작업은 sector-level dashboard, source freshness, replay/validation, manual catalyst ledger입니다. Stock Candidate Funnel은 Layer 4의 sector validation handoff 이후에만 진행합니다.
 
 ## 1. 왜 Sector 다음에 Stock인가
 
@@ -28,6 +28,18 @@ Stock Candidate Funnel
   ↓
 Stock Quality / Expectation 확장
 ```
+
+현재 Layer 4 handoff 조건:
+
+```text
+validation.status = historical_ready
+probability_mode = sample_observed
+pattern diagnostics ready > 0
+observed_probability_20d ready > 0
+reliability_label medium/high 패턴 존재
+```
+
+Layer 5는 이 handoff를 입력으로 삼아 후보군을 좁히는 연구 화면이며, 매수/매도 지시나 개인화된 추천 화면이 아닙니다.
 
 ## 2. 첫 Stock 확장: Candidate Funnel
 

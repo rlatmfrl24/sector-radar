@@ -407,12 +407,13 @@ POST /api/refresh
 
 `GET /api/history` returns bounded trails for RRG and market context. It accepts `timeframe=30D|90D|180D` and still supports the older bounded `limit` parameter. If not enough data exists, it degrades to empty arrays.
 
-`GET /api/validation` returns Layer 4 historical diagnostics derived from `sector_metrics_daily` and `series_daily`. It does not expose calibrated probabilities.
+`GET /api/validation` returns Layer 4 historical diagnostics derived from `sector_metrics_daily` and `series_daily`. It does not expose calibrated probabilities. When forward labels are available, it exposes sample-observed probability inside Layer 4 only, with reliability.
 
 ```json
 {
   "status": "historical_ready",
-  "expose_probability": false,
+  "expose_probability": true,
+  "probability_mode": "sample_observed",
   "scorecard": {
     "sector_rrg_ic": null,
     "pattern_hit_rate": null,
@@ -444,6 +445,12 @@ POST /api/refresh
       "fwd_rel_60d_median": 1.7,
       "max_drawdown_20d_median": -3.1,
       "leading_after_20d_count": 42,
+      "observed_probability_20d": 58.5,
+      "observed_probability_60d": 65.2,
+      "positive_20d_count": 62,
+      "positive_60d_count": 43,
+      "reliability_score": 88,
+      "reliability_label": "high",
       "status": "ready",
       "next_step": "Monitor with scheduled audit"
     }
@@ -462,15 +469,18 @@ POST /api/refresh
 Layer 4 uses this response without requiring a new migration. The React view derives:
 
 ```text
-validationGate = status + expose_probability
+validationGate = status + expose_probability + probability_mode
 coverageCards = sector_snapshots + sector_history_days + market_context_points + market_context_days
 replayWindows = 30D / 90D / 180D readiness from /api/validation, falling back to /api/history coverage
 patternDiagnostics = historical 20D/60D forward relative diagnostics by rule_pattern
+observedProbability = positive forward relative labels / evaluated forward labels
+reliability = sample count + history days + 60D label coverage
+layerFiveHandoff = sector validation ready + observed probability ready + reliability ready
 blockedCopy = limitations only when data is unavailable or insufficient
 ```
 
-`expose_probability` remains `false` until walk-forward validation and calibration are implemented.
-When `status = "historical_ready"`, the diagnostics API may return an empty `limitations` array. Probability gating is represented by `expose_probability = false`, not as a blocking limitation.
+`expose_probability = true` means Layer 4 may show sample-observed probability with reliability. It does not mean calibrated probability, expected return, hit rate, or recommendation.
+When `status = "historical_ready"`, the diagnostics API may return an empty `limitations` array.
 
 `GET /api/validation/status` returns a compact operational status for monitors and smoke checks:
 
@@ -478,9 +488,16 @@ When `status = "historical_ready"`, the diagnostics API may return an empty `lim
 {
   "service": "layer4-validation",
   "status": "historical_ready",
-  "expose_probability": false,
+  "expose_probability": true,
+  "probability_mode": "sample_observed",
   "diagnostics_ready": 4,
   "diagnostics_total": 6,
+  "probability_ready": 4,
+  "reliability": {
+    "high": 3,
+    "medium": 2,
+    "low": 1
+  },
   "schedule": {
     "run_type": "layer4_validation_audit",
     "last_run_status": "success"
@@ -495,7 +512,7 @@ sourceExampleValidationResponse
 sourceExampleHistoryResponse(timeframe)
 ```
 
-These temporary fixtures are used when `?qa=source-examples` is active or when the history/validation API is unavailable or returns no coverage. They may show `status = historical_ready` for UI verification, but must keep `expose_probability = false` and an explicit temporary fixture limitation.
+These temporary fixtures are used when `?qa=source-examples` is active or when the history/validation API is unavailable or returns no coverage. They may show `status = historical_ready`, `expose_probability = true`, and `probability_mode = sample_observed` for UI verification, but must include an explicit temporary fixture limitation.
 
 ## 6. Error Contract
 

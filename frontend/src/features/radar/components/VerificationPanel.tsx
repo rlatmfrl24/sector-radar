@@ -11,7 +11,7 @@ export function VerificationPanel({ validation }: { validation: ValidationRespon
         <span>검증 상태</span>
         <strong>{validationStatusLabel(validation?.status)}</strong>
       </div>
-      <p>이력 진단 결과와 확률 보정 단계는 분리해 표시합니다. 현재 화면의 판단 문구는 규칙과 패턴 근거만 사용합니다.</p>
+      <p>이력 진단 결과는 표본 관측 확률과 신뢰도를 함께 표시합니다. 현재 화면의 판단 문구는 규칙과 패턴 근거만 사용합니다.</p>
       <dl>
         <div>
           <dt>sector samples</dt>

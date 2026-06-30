@@ -238,7 +238,7 @@ src/sector_radar/data/store.py
   get_series_freshness(conn, series_ids, field)
 ```
 
-`sector_metrics_daily.validation_status`는 MVP에서 기본적으로 `unvalidated`이며, `expose_probability`는 검증 전 항상 `0`이어야 합니다.
+`sector_metrics_daily.validation_status`는 MVP에서 기본적으로 `unvalidated`이며, row-level `expose_probability`는 섹터 스냅샷 자체의 예측 확률 노출 여부라서 기본 `0`으로 유지합니다. Layer 4의 `/api/validation`은 이 테이블과 `series_daily` 이력에서 별도 `sample_observed` 진단을 파생하며, 이때 API-level `expose_probability`는 표본 관측 확률 표시 가능 여부를 뜻합니다.
 
 ## 5. Freshness Query
 

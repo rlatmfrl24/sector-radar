@@ -4,6 +4,8 @@ export const LAYER4_VALIDATION_CRON = "Runs after each sector-radar-ingest sched
 export type ValidationStatus = "historical_ready" | "insufficient_history" | "unvalidated";
 export type ReplayWindowStatus = "collecting" | "limited" | "ready";
 export type PatternDiagnosticStatus = "collecting" | "ready" | "thin_sample";
+export type ProbabilityMode = "hidden" | "sample_observed";
+export type ReliabilityLabel = "low" | "medium" | "high";
 
 export interface D1QueryDatabase {
   prepare(query: string): D1QueryStatement;
@@ -51,7 +53,13 @@ export interface PatternDiagnostic {
   leading_after_20d_count: number;
   max_drawdown_20d_median: number | null;
   next_step: string;
+  observed_probability_20d: number | null;
+  observed_probability_60d: number | null;
   pattern: string;
+  positive_20d_count: number;
+  positive_60d_count: number;
+  reliability_label: ReliabilityLabel;
+  reliability_score: number;
   sample_size: number;
   status: PatternDiagnosticStatus;
 }
@@ -72,9 +80,10 @@ export interface LayerFourValidationReport {
     sector_history_days: number;
     sector_snapshots: number;
   };
-  expose_probability: false;
+  expose_probability: boolean;
   limitations: string[];
   pattern_diagnostics: PatternDiagnostic[];
+  probability_mode: ProbabilityMode;
   replay_windows: ReplayWindowDiagnostic[];
   schedule: {
     api: string;
@@ -146,6 +155,7 @@ export function buildLayerFourValidationReportFromRows(
     .sort((a, b) => b.evaluated_20d - a.evaluated_20d || b.sample_size - a.sample_size || a.pattern.localeCompare(b.pattern));
   const evaluatedSamples = patternDiagnostics.reduce((sum, item) => sum + item.evaluated_20d, 0);
   const status = validationStatus(sectorHistoryDays, evaluatedSamples);
+  const exposeProbability = status === "historical_ready" && evaluatedSamples > 0;
 
   return {
     coverage: {
@@ -154,9 +164,10 @@ export function buildLayerFourValidationReportFromRows(
       sector_history_days: sectorHistoryDays,
       sector_snapshots: sectorSnapshots,
     },
-    expose_probability: false,
+    expose_probability: exposeProbability,
     limitations: validationLimitations(status, evaluatedSamples),
     pattern_diagnostics: patternDiagnostics,
+    probability_mode: exposeProbability ? "sample_observed" : "hidden",
     replay_windows: replayWindows(sectorHistoryDays),
     schedule: {
       api: "/api/validation/status",
@@ -204,6 +215,7 @@ function emptyValidationReport(limitations: string[]): LayerFourValidationReport
     expose_probability: false,
     limitations,
     pattern_diagnostics: [],
+    probability_mode: "hidden",
     replay_windows: replayWindows(0),
     schedule: {
       api: "/api/validation/status",
@@ -343,6 +355,9 @@ function patternDiagnostic(
   const drawdown20 = observations.map((item) => item.drawdown20).filter(isNumber);
   const leadingAfter20 = observations.filter((item) => item.futureQuadrant20 === "leading").length;
   const status = patternStatus(historyDays, fwd20.length);
+  const positive20 = fwd20.filter((value) => value > 0).length;
+  const positive60 = fwd60.filter((value) => value > 0).length;
+  const reliabilityScore = patternReliabilityScore(historyDays, fwd20.length, fwd60.length);
 
   return {
     evaluated_20d: fwd20.length,
@@ -352,10 +367,34 @@ function patternDiagnostic(
     leading_after_20d_count: leadingAfter20,
     max_drawdown_20d_median: median(drawdown20),
     next_step: patternNextStep(status),
+    observed_probability_20d: observedProbability(positive20, fwd20.length),
+    observed_probability_60d: observedProbability(positive60, fwd60.length),
     pattern,
+    positive_20d_count: positive20,
+    positive_60d_count: positive60,
+    reliability_label: reliabilityLabel(reliabilityScore),
+    reliability_score: reliabilityScore,
     sample_size: sampleSize,
     status,
   };
+}
+
+function observedProbability(positiveCount: number, sampleCount: number) {
+  if (sampleCount === 0) return null;
+  return roundOne((positiveCount / sampleCount) * 100);
+}
+
+function patternReliabilityScore(historyDays: number, evaluated20: number, evaluated60: number) {
+  const sampleScore = Math.min(1, evaluated20 / 100);
+  const historyScore = Math.min(1, historyDays / 252);
+  const horizonScore = Math.min(1, evaluated60 / 60);
+  return Math.round((sampleScore * 0.55 + historyScore * 0.25 + horizonScore * 0.2) * 100);
+}
+
+function reliabilityLabel(score: number): ReliabilityLabel {
+  if (score >= 75) return "high";
+  if (score >= 45) return "medium";
+  return "low";
 }
 
 function patternStatus(historyDays: number, evaluated20: number): PatternDiagnosticStatus {

@@ -85,8 +85,8 @@ describe("DashboardTopBar explain mode", () => {
       />,
     );
 
-    expect(html).toContain("이력 진단 완료");
-    expect(html).toContain("확률성 판단 문구는 calibration 단계 전까지 분리합니다.");
+    expect(html).toContain("표본 확률 표시");
+    expect(html).toContain("관측치는 신뢰도와 함께 Layer 4에서 확인합니다.");
     expect(html).not.toContain("상승 확률");
     expect(html).not.toContain("승률");
     expect(html).not.toContain("기대수익률");

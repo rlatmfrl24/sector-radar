@@ -9,19 +9,19 @@ import {
 import { LayerFourValidationLab } from "./LayerFourValidationLab";
 
 describe("LayerFourValidationLab", () => {
-  it("shows completed validation coverage, fixture limits, and hidden probability gate", () => {
+  it("shows completed validation coverage, fixture limits, and sample-observed probability", () => {
     const html = renderLayerFour();
 
     expect(html).toContain("Layer 4");
     expect(html).toContain("검증 Lab");
     expect(html).toContain("현재 진행 상황");
-    expect(html).toContain("데이터 수집, replay, 패턴 진단은 별도로 완료 상태를 표시합니다.");
+    expect(html).toContain("이력 검증, Replay 범위, 패턴 진단, 표본 관측치를 한 흐름으로 확인합니다.");
     expect(html).toContain("수집 충분");
     expect(html).toContain("패턴 진단 완료");
-    expect(html).toContain("확률 보정 대기");
+    expect(html).toContain("표본 확률 표시");
     expect(html).toContain("1512 sector samples");
-    expect(html).toContain("확률 숨김");
     expect(html).toContain("이력 진단 완료");
+    expect(html).toContain("126일 / 1512 samples");
     expect(html).toContain("126 history days");
     expect(html).toContain("504 rows / 126 days");
     expect(html).toContain("Replay 가능");
@@ -32,9 +32,18 @@ describe("LayerFourValidationLab", () => {
     expect(html).toContain("Temporary Layer 4 fixture is displayed when validation data is unavailable.");
     expect(html).toContain("Fixture diagnostics are synthetic and must not be read as live historical diagnostics.");
     expect(html).toContain("패턴별 이력 진단 결과");
+    expect(html).toContain("pattern diagnostics chart");
     expect(html).toContain("Strong Leader");
+    expect(html).toContain("67.0%");
+    expect(html).toContain("높음 88/100");
     expect(html).toContain("+1.4%");
-    expect(html).toContain("layer4_validation_audit");
+    expect(html).toContain("20D 하락");
+    expect(html).toContain("양수 라벨");
+    expect(html).not.toContain("Layer 5 Handoff");
+    expect(html).not.toContain("후보 퍼널 진입 준비");
+    expect(html).not.toContain("정기 진단 갱신");
+    expect(html).not.toContain("정기 확인");
+    expect(html).not.toContain("layer4_validation_audit");
     expect(html).not.toContain("이력 진단 준비");
     expect(html).not.toContain("진단 준비");
   });

@@ -19,12 +19,12 @@ Layer 3 리더십
   현재 RS 리더 상세, 모멘텀 선두 후보, RRG, path, treemap, selected-sector inspector
 
 Layer 4 검증
-  검증 진행 단계, 이력 진단 상태, replay 가능 범위, pattern diagnostics, 확률 게이트, scheduled audit
+  통합 검증 요약, Replay 상태, pattern diagnostics chart, 표본 관측 확률, 신뢰도
 ```
 
 Layer 3에서는 **현재 RS 리더**와 **모멘텀 선두**를 같은 “주도섹터”로 부르지 않습니다. 둘이 다르면 오류가 아니라 리더십 전환 관찰 신호로 표시합니다.
 
-Layer 4는 Layer 1~3 판단을 예측처럼 확장하지 않고, D1 이력에서 20D/60D forward relative diagnostics를 계산해 pattern별 historical diagnostics로 분리해 보여줍니다. 화면은 데이터 수집, replay, 패턴 진단, 확률 보정 단계를 분리해 보여주며, 이력 진단이 완료되면 `historical_ready`로 표시합니다. Calibration 전에는 확률성 판단 문구를 노출하지 않습니다.
+Layer 4는 Layer 1~3 판단을 예측처럼 확장하지 않고, D1 이력에서 20D/60D forward relative diagnostics를 계산해 pattern별 historical diagnostics로 분리해 보여줍니다. 화면은 데이터 수집, Replay 범위, 패턴 진단, 표본 관측치를 하나의 검증 요약으로 통합해 보여주며, 이력 진단이 완료되면 `historical_ready`로 표시합니다. Calibration 전 예측 확률이나 추천 문구는 금지하지만, Layer 4 안에서는 표본 관측 확률과 신뢰도를 가로형 분석 차트로 표시합니다.
 
 ## Architecture
 
@@ -125,7 +125,7 @@ Reference docs:
 
 - Do not collapse modules into one average score.
 - Keep state and transition separate.
-- Do not expose unvalidated probabilities, hit rates, or expected returns in the main UI.
+- Do not expose calibrated-looking probability, hit-rate, or expected-return claims in the main UI. Layer 4 may show sample-observed probability with reliability.
 - Keep thresholds in config or injected runtime settings.
 - Surface data freshness for every dashboard output.
 - Preserve module disagreement as signal.

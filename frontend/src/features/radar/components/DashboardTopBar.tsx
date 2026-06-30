@@ -227,7 +227,7 @@ function buildStatusItems(data: SectorsResponse, validation?: ValidationResponse
     {
       label: "검증",
       tone: "guard",
-      tooltip: `현재 검증 상태: ${validationStatusLabel(validation?.status ?? data.validation.status)}. 확률 노출: ${(validation?.expose_probability ?? data.validation.expose_probability) ? "켜짐" : "숨김"}. 확률성 판단 문구는 calibration 단계 전까지 분리합니다.`,
+      tooltip: `현재 검증 상태: ${validationStatusLabel(validation?.status ?? data.validation.status)}. 표본 관측 확률: ${(validation?.expose_probability ?? data.validation.expose_probability) ? "표시" : "대기"}. 관측치는 신뢰도와 함께 Layer 4에서 확인합니다.`,
       value: validationPillValue(validation, data.validation.expose_probability),
     },
   ];
@@ -289,8 +289,8 @@ function validationStatusLabel(status: string) {
 }
 
 function validationPillValue(validation: ValidationResponse | null | undefined, fallbackExposeProbability: boolean) {
-  if (validation?.status === "historical_ready") return "이력 진단 완료";
+  if (validation?.status === "historical_ready") return validation.expose_probability ? "표본 확률 표시" : "이력 진단 완료";
   if (validation?.status === "insufficient_history") return "표본 부족";
   if (validation?.status === "unvalidated") return "검증 전";
-  return fallbackExposeProbability ? "확률 표시" : "검증 전";
+  return fallbackExposeProbability ? "표본 확률 표시" : "검증 전";
 }

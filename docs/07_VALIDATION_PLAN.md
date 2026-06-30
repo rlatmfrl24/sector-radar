@@ -133,7 +133,7 @@ Rulebook 판단과 실제 결과 비교
 
 ### 8.1 Layer 4 검증 Lab v1
 
-현재 대시보드는 Layer 4를 검증 Lab으로 둡니다. v1은 D1에 적재된 `sector_metrics_daily`와 `series_daily` 이력을 사용해 pattern별 historical diagnostics를 계산합니다. Calibration은 아직 구현하지 않으므로 확률은 계속 숨깁니다.
+현재 대시보드는 Layer 4를 검증 Lab으로 둡니다. v1은 D1에 적재된 `sector_metrics_daily`와 `series_daily` 이력을 사용해 pattern별 historical diagnostics를 계산합니다. Calibration은 아직 구현하지 않지만, 사용자가 진행 상태를 확인할 수 있도록 Layer 4 안에서는 표본 관측 확률과 신뢰도를 함께 표시합니다.
 
 ```text
 사용 데이터:
@@ -144,15 +144,18 @@ Rulebook 판단과 실제 결과 비교
 
 표시:
   validation status
-  expose_probability=false
+  expose_probability=true when historical diagnostics have forward labels
   sector snapshot coverage
   sector history days
   market context coverage
   30D / 90D / 180D replay readiness
   rulebook pattern diagnostics
+  sample-observed 20D / 60D probability
+  positive 20D / 60D forward-label count
+  reliability score and label
   20D / 60D forward relative median
   20D drawdown median
-  scheduled audit status
+  scheduled audit status through the monitor API only
   limitations only when data is unavailable or insufficient
 ```
 
@@ -163,10 +166,10 @@ sector_history_days == 0  -> 데이터 없음
 sector_history_days < 60  -> 표본 부족
 sector_history_days >= 60 and forward labels > 0 -> historical_ready
 validation.status == historical_ready -> pattern diagnostics 표시
-validation.expose_probability == false -> 확률 숨김
+validation.expose_probability == true -> Layer 4에서 표본 관측 확률 표시
 ```
 
-Layer 4는 historical diagnostics를 분리하는 화면입니다. `historical_ready` 상태에서는 이력 진단을 완료 상태로 표시하고, 확률성 문구는 별도 calibration 단계 전까지 `expose_probability = false` 게이트로만 관리합니다.
+Layer 4는 historical diagnostics를 분리하는 화면입니다. `historical_ready` 상태에서는 이력 진단을 완료 상태로 표시하고, `expose_probability = true`일 때 pattern별 positive forward-label 비율을 `표본 관측 확률`로 표시합니다. 이 값은 보정 완료 확률이 아니며 신뢰도 점수와 함께 해석해야 합니다.
 
 정기 작업:
 
@@ -182,6 +185,8 @@ Schedule: 기존 ingest cron 이후 audit 실행
 ```text
 Pattern: Emerging Leader
 Samples: 148
+Observed 20D probability: 61.5% (91/148)
+Reliability: medium 68/100
 Forward 20D median relative return: +1.3%
 Forward 60D median relative return: +2.6%
 Improving → Leading within 20D: 42%
@@ -209,9 +214,10 @@ Status: useful but not sufficient alone
   "signal": "Emerging Leader",
   "validation_status": "validated_v1",
   "sample_size": 148,
-  "expose_probability": false,
-  "allowed_display": ["state", "pattern", "narrative", "historical_forward_stats"]
+  "expose_probability": true,
+  "probability_mode": "sample_observed",
+  "allowed_display": ["state", "pattern", "narrative", "historical_forward_stats", "sample_observed_probability", "reliability"]
 }
 ```
 
-확률 노출은 별도 모델 검증 이후에만 허용합니다.
+보정 완료 확률 노출은 별도 모델 검증 이후에만 허용합니다. Layer 4 v1의 `sample_observed_probability`는 현재 누적 표본의 진단치입니다.

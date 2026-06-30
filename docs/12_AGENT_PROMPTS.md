@@ -35,7 +35,7 @@ Requirements:
 - Layer 3 default inspector follows the current RS leader.
 - Momentum rail is sorted by rs_momentum desc, rs_ratio desc.
 - Do not call both current RS leader and momentum leader "주도섹터".
-- Layer 4 uses validation/history coverage for readiness only, not probability-like claims.
+- Layer 4 may show sample-observed probability with reliability, but not calibrated forecast or recommendation language.
 - Show narrative, risks, invalidation, data freshness, and validation status.
 - Run npm run test:app and npm run build.
 ```
@@ -50,7 +50,7 @@ Read docs/09_API_CONTRACT.md, docs/03_ARCHITECTURE.md, and frontend/src/types.ts
 Maintain:
 - GET /api/sectors top-level SectorsResponse
 - GET /api/history timeframe=30D|90D|180D
-- GET /api/validation with expose_probability=false
+- GET /api/validation with Layer 4 sample-observed probability when forward labels are available
 - GET /api/data/status
 - POST /api/refresh returning refresh_unavailable_in_pages on public Pages
 
@@ -100,7 +100,7 @@ Implement replay or validation.
 
 Read docs/07_VALIDATION_PLAN.md and skills/skill_validation_engineer.md.
 
-Validation outputs may include descriptive diagnostics inside Verification/Validation surfaces only. Main dashboard copy must remain probability-free. Keep expose_probability=false until walk-forward validation and calibration are explicitly implemented.
+Validation outputs may include descriptive diagnostics inside Verification/Validation surfaces only. Main dashboard copy must remain forecast-probability-free. Layer 4 may set `expose_probability=true` only for `probability_mode=sample_observed` and must show reliability with it.
 ```
 
 ## 8. Documentation 작업 프롬프트

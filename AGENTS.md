@@ -49,9 +49,9 @@ source_metrics
 data_freshness
 ```
 
-### 2.3 Do not expose unvalidated probabilities
+### 2.3 Keep probability wording scoped and labeled
 
-Until walk-forward validation and calibration are implemented, do not expose claims such as:
+Do not expose probability as a current forecast, recommendation, or calibrated edge. Avoid claims such as:
 
 ```text
 상승 확률 72%
@@ -59,7 +59,7 @@ Until walk-forward validation and calibration are implemented, do not expose cla
 승률 80%
 ```
 
-Allowed before validation:
+Allowed outside Layer 4:
 
 ```text
 state
@@ -69,6 +69,16 @@ confidence as rule-alignment score
 qualitative conviction: low / medium / high
 ```
 
+Allowed inside Layer 4 after historical diagnostics are available:
+
+```text
+sample-observed probability
+positive forward-label count
+reliability score
+reliability label: low / medium / high
+```
+
+Layer 4 must label these as **표본 관측 확률** or **sample-observed probability**, not calibrated probability.
 If a numeric `conviction` is used, label it as **rule alignment**, not calibrated probability.
 
 ### 2.4 State and transition are separate
@@ -161,7 +171,7 @@ Follow this order unless the user explicitly changes scope.
 5. Maintain Sector Rulebook patterns, vetoes, narratives, risks, invalidation
 6. Maintain React 4-layer dashboard: Layer 1 흐름, Layer 2 여력, Layer 3 리더십, Layer 4 검증
 7. Maintain layer-scoped source freshness and validation gate
-8. Build replay and validation harness before exposing any probability-like metric
+8. Build replay and validation harness before exposing Layer 4 sample-observed probability
 9. Connect manual catalyst ledger after freshness and invalidation are trackable
 10. Consider Stock Engine expansion only after sector validation scaffolding exists
 
@@ -299,7 +309,7 @@ A task is done only when:
 4. docs are updated
 5. dashboard output includes data freshness
 6. rulebook output includes risks and invalidation
-7. no unvalidated probability is exposed
+7. probability-like output is either hidden or scoped to Layer 4 sample-observed diagnostics with reliability
 
 ## 10. Safety and Product Boundaries
 
@@ -310,7 +320,7 @@ automated trading
 broker order placement
 personalized buy/sell recommendations
 promises of profit
-unvalidated probability claims
+uncalibrated probability claims outside Layer 4 diagnostics
 ```
 
 Use wording such as:

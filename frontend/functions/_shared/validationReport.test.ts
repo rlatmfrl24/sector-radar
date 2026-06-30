@@ -25,7 +25,8 @@ describe("Layer 4 validation report", () => {
     });
 
     expect(report.status).toBe("historical_ready");
-    expect(report.expose_probability).toBe(false);
+    expect(report.expose_probability).toBe(true);
+    expect(report.probability_mode).toBe("sample_observed");
     expect(report.coverage).toMatchObject({
       market_context_days: 80,
       market_context_points: 320,
@@ -46,14 +47,20 @@ describe("Layer 4 validation report", () => {
         expect.objectContaining({
           evaluated_20d: 80,
           evaluated_60d: 40,
+          observed_probability_20d: 100,
+          positive_20d_count: 80,
           pattern: "Emerging Leader",
+          reliability_label: "medium",
           sample_size: 100,
           status: "ready",
         }),
         expect.objectContaining({
           evaluated_20d: 80,
           evaluated_60d: 40,
+          observed_probability_20d: 0,
+          positive_20d_count: 0,
           pattern: "Late Leader",
+          reliability_label: "medium",
           sample_size: 100,
           status: "ready",
         }),
@@ -74,8 +81,11 @@ describe("Layer 4 validation report", () => {
     const report = buildLayerFourValidationReportFromRows(metrics, closes);
 
     expect(report.status).toBe("insufficient_history");
+    expect(report.expose_probability).toBe(false);
+    expect(report.probability_mode).toBe("hidden");
     expect(report.pattern_diagnostics[0]).toMatchObject({
       evaluated_20d: 15,
+      reliability_label: "low",
       status: "collecting",
     });
     expect(report.replay_windows[0]).toMatchObject({

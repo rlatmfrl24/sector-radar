@@ -64,12 +64,12 @@ describe("FreshnessBar scoped source display", () => {
     );
 
     expect(html).toContain("검증");
-    expect(html).toContain("이력 진단 완료");
+    expect(html).toContain("표본 확률 표시");
     expect(html).toContain("Replay");
     expect(html).toContain("2/3 가능");
     expect(html).toContain("패턴 진단");
     expect(html).toContain("4/4 완료");
-    expect(html).toContain("확률 게이트");
+    expect(html).toContain("표본 확률");
     expect(html).not.toContain("RS 리더");
   });
 });

@@ -48,13 +48,19 @@ describe("source example sectors response", () => {
 
     expect(sourceExampleValidationResponse).toMatchObject({
       status: "historical_ready",
-      expose_probability: false,
+      expose_probability: true,
+      probability_mode: "sample_observed",
       coverage: {
         sector_history_days: 126,
         sector_snapshots: sourceExampleSectorsResponse.sectors.length * 126,
       },
       pattern_diagnostics: expect.arrayContaining([
-        expect.objectContaining({ pattern: "Strong Leader", status: "ready" }),
+        expect.objectContaining({
+          observed_probability_20d: 67,
+          pattern: "Strong Leader",
+          reliability_label: "high",
+          status: "ready",
+        }),
       ]),
       schedule: {
         api: "/api/validation/status",

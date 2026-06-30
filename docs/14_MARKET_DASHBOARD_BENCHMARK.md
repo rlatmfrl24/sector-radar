@@ -45,7 +45,7 @@ The following benchmark concepts have already been absorbed into the current arc
 | Layer 2 official/proxy separation | `market_context_daily`, `source_class`, FRED/KRX/Yahoo priority |
 | Multi-window RRG | 1M/3M/6M/12M RRG evidence and UI strip |
 | RRG history trail | `/api/history` and selected-sector RRG trail |
-| Verification separated from main 판단 | `/api/validation`, `VerificationPanel`, `expose_probability = false` |
+| Verification separated from main 판단 | `/api/validation`, `VerificationPanel`, `probability_mode = sample_observed` only in Layer 4 |
 | Common engine envelope idea | Module state + rulebook output contracts retained |
 | Source freshness table | `source_freshness`, expandable `SourceFreshnessPanel` |
 | Trigger watchlist | system-generated `watchlist` rows in Layer 2 |
@@ -472,9 +472,9 @@ Unavailable cap data -> proxy label remains visible.
 Tasks:
 
 1. Build replay dataset.
-2. Compute IC/hit-rate-like diagnostics offline.
+2. Compute historical forward-label diagnostics offline.
 3. Display only in Verification panel.
-4. Keep `expose_probability = false` until calibration is explicitly accepted.
+4. Keep calibrated-looking probability claims out of main 판단 copy until calibration is explicitly accepted.
 
 ## 7. Final Recommendation
 
