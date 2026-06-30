@@ -81,7 +81,7 @@ button:focus-visible {
   z-index: 10;
   top: 0;
   display: grid;
-  grid-template-columns: auto minmax(300px, 370px) minmax(0, 1fr);
+  grid-template-columns: auto minmax(340px, 420px) minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   min-height: 52px;
@@ -320,9 +320,9 @@ button:focus-visible {
 
 .view-switch {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   justify-self: start;
-  width: min(100%, 370px);
+  width: min(100%, 420px);
   gap: 3px;
   min-width: 0;
   border: 1px solid var(--hairline);
@@ -338,7 +338,7 @@ button:focus-visible {
   min-height: 31px;
   border: 0;
   border-radius: var(--radius-md);
-  padding: 4px 9px;
+  padding: 4px 7px;
   background: transparent;
   color: var(--ink-mute);
   cursor: pointer;
@@ -5681,7 +5681,7 @@ button:focus-visible {
   }
 
   .view-switch {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     border-radius: var(--radius-lg);
   }
 
