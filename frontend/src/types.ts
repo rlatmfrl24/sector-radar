@@ -169,6 +169,54 @@ export interface ContextReconciliation {
   warnings: string[];
 }
 
+export type DataQualityStatus = "complete" | "partial" | "stale" | "blocked";
+export type DataQualityIssueSeverity = "info" | "warning" | "blocking";
+
+export interface DataQualityIssue {
+  code: string;
+  severity: DataQualityIssueSeverity;
+  message: string;
+  source?: string;
+}
+
+export interface LayerDataQualitySummary {
+  status: DataQualityStatus;
+  completeness: number | null;
+  as_of: string | null;
+  issues: DataQualityIssue[];
+}
+
+export interface DashboardDataQuality {
+  snapshot_as_of: string | null;
+  generated_at: string;
+  layers: {
+    layer1: LayerDataQualitySummary;
+    layer2: LayerDataQualitySummary;
+    layer3: LayerDataQualitySummary;
+    layer4?: LayerDataQualitySummary;
+  };
+}
+
+export interface LeadershipReconciliation {
+  status: "aligned" | "transition_watch" | "data_insufficient";
+  as_of: string | null;
+  current_leader: {
+    sector_code: string;
+    rs_ratio: number | null;
+    lead_pattern: string;
+    quadrant: SectorSnapshot["quadrant"];
+  } | null;
+  momentum_leader: {
+    sector_code: string;
+    rs_momentum: number | null;
+    lead_pattern: string;
+    quadrant: SectorSnapshot["quadrant"];
+  } | null;
+  selected_basis: "current_rs_leader_default";
+  narrative: string;
+  warnings: string[];
+}
+
 export interface LayerOneFlowSnapshot {
   as_of?: string;
   state: "constructive" | "caution" | "mixed" | "data_insufficient";
@@ -236,6 +284,8 @@ export interface SectorsResponse {
   source_expansion?: SourceExpansionItem[];
   watchlist?: TriggerWatchlistItem[];
   context_reconciliation?: ContextReconciliation;
+  data_quality?: DashboardDataQuality;
+  leadership_reconciliation?: LeadershipReconciliation;
 }
 
 export interface RefreshResponse {
@@ -252,6 +302,11 @@ export interface HistoryResponse {
     available_sector_days: number;
     effective_days: number;
     limited_by_data: boolean;
+    sector_count?: number;
+    min_sector_days?: number;
+    max_sector_days?: number;
+    complete_sector_days?: number;
+    missing_sector_codes?: string[];
   };
   sectors: Array<{
     sector_code: string;
@@ -298,6 +353,10 @@ export interface ValidationResponse {
     sector_history_days: number;
     market_context_points: number;
     market_context_days: number;
+    evaluated_forward_labels_20d?: number;
+    evaluated_forward_labels_60d?: number;
+    pattern_ready_count?: number;
+    thin_pattern_count?: number;
   };
   replay_windows?: Array<{
     timeframe: HistoryTimeframe;
@@ -320,6 +379,9 @@ export interface ValidationResponse {
     observed_probability_60d?: number | null;
     positive_20d_count?: number;
     positive_60d_count?: number;
+    evaluated_ratio_20d?: number | null;
+    evaluated_ratio_60d?: number | null;
+    quality_warnings?: string[];
     reliability_label?: ValidationReliabilityLabel;
     reliability_score?: number;
     status: ValidationPatternStatus;

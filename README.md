@@ -19,12 +19,18 @@ Layer 3 리더십
   현재 RS 리더 상세, 모멘텀 선두 후보, RRG, path, treemap, selected-sector inspector
 
 Layer 4 검증
-  통합 검증 요약, Replay 상태, pattern diagnostics chart, 표본 관측 확률, 신뢰도
+  컴팩트 검증 요약, Replay 상태, pattern diagnostics matrix, 표본 관측 확률, 신뢰도
 ```
 
 Layer 3에서는 **현재 RS 리더**와 **모멘텀 선두**를 같은 “주도섹터”로 부르지 않습니다. 둘이 다르면 오류가 아니라 리더십 전환 관찰 신호로 표시합니다.
 
-Layer 4는 Layer 1~3 판단을 예측처럼 확장하지 않고, D1 이력에서 20D/60D forward relative diagnostics를 계산해 pattern별 historical diagnostics로 분리해 보여줍니다. 화면은 데이터 수집, Replay 범위, 패턴 진단, 표본 관측치를 하나의 검증 요약으로 통합해 보여주며, 이력 진단이 완료되면 `historical_ready`로 표시합니다. Calibration 전 예측 확률이나 추천 문구는 금지하지만, Layer 4 안에서는 표본 관측 확률과 신뢰도를 가로형 분석 차트로 표시합니다.
+Layer 4는 Layer 1~3 판단을 예측처럼 확장하지 않고, D1 이력에서 20D/60D forward relative diagnostics를 계산해 pattern별 historical diagnostics로 분리해 보여줍니다. 화면은 데이터 수집, Replay 범위, 패턴 진단, 표본 관측치를 컴팩트한 검증 요약으로 통합해 보여주며, 이력 진단이 완료되면 `historical_ready`로 표시합니다. Calibration 전 예측 확률이나 추천 문구는 금지하지만, Layer 4 안에서는 표본 관측 확률과 신뢰도를 heat cell과 중심축 점 기반의 분석 매트릭스로 표시합니다.
+
+각 레이어는 판단값과 별도로 `data_quality`를 함께 표시합니다. 이 값은 새 DB migration 없이 `/api/sectors`, `/api/history`, `/api/validation`의 기존 D1 row에서 파생되며, 기준일 정렬, source freshness, sector panel completeness, official context coverage, pattern sample readiness를 `complete | partial | stale | blocked`로 분리합니다. Layer 3의 현재 RS 리더와 모멘텀 선두 차이는 `leadership_reconciliation`으로 설명하며, Layer 4는 ready pattern에만 표본 관측 확률을 표시하고 thin sample pattern은 상태로 분리합니다.
+
+각 Layer는 `결과 / 수집` 전환을 갖습니다. `결과` 화면은 판단과 분석에 집중하고, `수집` 화면은 같은 Layer scope의 수집원 요약, 수집원 상세, 레이어 상태 rail, 데이터 정합성을 별도로 보여줍니다. Layer 1 helper series, Layer 2 FRED/context, Layer 3 sector snapshot, Layer 4 history/validation 원천은 서로 섞이지 않습니다.
+
+프론트는 새 API 없이 `ResearchBriefViewModel`을 내부 파생해 Layer 4 guardrail 등 현재 화면 판단의 제한 문구에 사용합니다. 별도 쉬운 화면이나 AI 분석 화면은 현재 UI 범위에 포함하지 않습니다.
 
 ## Architecture
 
@@ -88,6 +94,7 @@ npm run test:worker
 | `src/sector_radar/rules/sector_rulebook.py` | pattern matching, veto, narrative, risks, invalidation |
 | `src/sector_radar/api/local_server.py` | local SQLite API for frontend development |
 | `frontend/src/features/radar/` | 4-layer dashboard view model and components |
+| `frontend/src/features/radar/reportModel.ts` | Research Brief view model, layer summaries, validation guardrails |
 | `frontend/functions/api/` | Cloudflare Pages Function API |
 | `frontend/workers/ingest/` | Scheduled Yahoo/FRED ingestion worker |
 | `frontend/migrations/` | D1 schema migrations |

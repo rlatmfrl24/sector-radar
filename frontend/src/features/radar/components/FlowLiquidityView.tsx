@@ -15,7 +15,8 @@ import {
   liquidityInputs,
   numberMetric,
 } from "../model";
-import { LayerHeader, MiniMetric, ModuleMeter, PanelHeader } from "./common";
+import type { LayerDecisionSummary } from "../reportModel";
+import { LayerHeader, MiniMetric, ModuleMeter, PanelHeader, ReportSentence } from "./common";
 
 type GroupedQuadrants = ReturnType<typeof groupByQuadrant>;
 
@@ -24,6 +25,7 @@ interface LayerOneFlowProps {
   healthyBreadthCount: number;
   layerOneFlow?: LayerOneFlowSnapshot;
   reconciliation?: ContextReconciliation;
+  reportSummary?: LayerDecisionSummary;
   sectors: SectorSnapshot[];
   warnings: SectorSnapshot[];
   weakBreadthCount: number;
@@ -46,6 +48,7 @@ export function FlowLiquidityView({
   grouped,
   healthyBreadthCount,
   layerOneFlow,
+  layerOneReportSummary,
   contextHistory,
   contextReconciliation,
   sectors,
@@ -54,6 +57,7 @@ export function FlowLiquidityView({
   warnings,
   weakBreadthCount,
   marketContext,
+  layerTwoReportSummary,
 }: {
   contextHistory: HistoryResponse["market_context"];
   contextReconciliation?: ContextReconciliation;
@@ -61,6 +65,8 @@ export function FlowLiquidityView({
   grouped: GroupedQuadrants;
   healthyBreadthCount: number;
   layerOneFlow?: LayerOneFlowSnapshot;
+  layerOneReportSummary?: LayerDecisionSummary;
+  layerTwoReportSummary?: LayerDecisionSummary;
   marketContext: ApiMarketContextCard[];
   sectors: SectorSnapshot[];
   selected: SectorSnapshot;
@@ -76,6 +82,8 @@ export function FlowLiquidityView({
         healthyBreadthCount={healthyBreadthCount}
         layerOneFlow={layerOneFlow}
         marketContext={marketContext}
+        layerOneReportSummary={layerOneReportSummary}
+        layerTwoReportSummary={layerTwoReportSummary}
         sectors={sectors}
         selected={selected}
         watchlist={watchlist}
@@ -127,6 +135,7 @@ function BeginnerLayerOneGuide({
   healthyBreadthCount,
   layerOneFlow,
   reconciliation,
+  reportSummary,
   sectors,
   warnings,
   weakBreadthCount,
@@ -173,6 +182,7 @@ function BeginnerLayerOneGuide({
         meta="Layer 1"
         title="쉬운 흐름 해설"
       />
+      <ReportSentence summary={reportSummary} />
       <div className="beginner-top-grid">
         <article className="beginner-verdict-card dashboard-card">
           <span>Layer 1 쉬운 결론</span>
@@ -180,7 +190,7 @@ function BeginnerLayerOneGuide({
           <p>{narrative}</p>
           <div className="beginner-verdict-note">
             <strong>{layerOneFlow ? stateKorean(layerOneFlow.state) : "데이터 대기"}</strong>
-            <small>확률이나 매수·매도 판단이 아니라, 가격 흐름과 내부 확산의 정렬 상태를 쉽게 읽은 리서치 판독입니다.</small>
+            <small>확률형 전망이나 거래 지시가 아니라, 가격 흐름과 내부 확산의 정렬 상태를 쉽게 읽은 리서치 판독입니다.</small>
           </div>
         </article>
         <BeginnerFlowDiagram signals={signals} />
@@ -232,6 +242,8 @@ function BeginnerFlowGuide({
   grouped,
   healthyBreadthCount,
   layerOneFlow,
+  layerOneReportSummary,
+  layerTwoReportSummary,
   marketContext,
   sectors,
   selected,
@@ -243,6 +255,8 @@ function BeginnerFlowGuide({
   grouped: ReturnType<typeof groupByQuadrant>;
   healthyBreadthCount: number;
   layerOneFlow?: LayerOneFlowSnapshot;
+  layerOneReportSummary?: LayerDecisionSummary;
+  layerTwoReportSummary?: LayerDecisionSummary;
   marketContext: ApiMarketContextCard[];
   sectors: SectorSnapshot[];
   selected: SectorSnapshot;
@@ -301,6 +315,7 @@ function BeginnerFlowGuide({
         meta="Layer 1 + 2"
         title="쉬운 흐름 해설"
       />
+      <ReportSentence summary={layerOneReportSummary ?? layerTwoReportSummary} />
       <div className="beginner-top-grid">
         <article className="beginner-verdict-card dashboard-card">
           <span>오늘의 쉬운 결론</span>
@@ -308,7 +323,7 @@ function BeginnerFlowGuide({
           <p>{finalNarrative}</p>
           <div className="beginner-verdict-note">
             <strong>{reconciliationLabel(finalState)}</strong>
-            <small>확률이나 매수·매도 판단이 아니라, 현재 모듈의 정렬과 불일치를 쉽게 읽은 리서치 판독입니다.</small>
+            <small>확률형 전망이나 거래 지시가 아니라, 현재 모듈의 정렬과 불일치를 쉽게 읽은 리서치 판독입니다.</small>
           </div>
         </article>
         <BeginnerFlowDiagram signals={signals} />

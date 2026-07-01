@@ -1,13 +1,14 @@
 import type { MarketContextCard, PriceBar, SectorMetricRow, SeriesRow } from "./contracts";
+import { METRIC_THRESHOLDS, METRIC_WINDOWS } from "../../functions/_shared/metricThresholds";
 import { buildMarketContextFromSeriesRows } from "./marketContext";
 import { BENCHMARK, MARKET, SECTORS } from "./universe";
 
-const RS_WINDOW = 50;
-const MOMENTUM_WINDOW = 10;
-const BREADTH_WINDOWS = [20, 50, 200] as const;
-const PARTICIPATION_WINDOW = 20;
-const DEFAULT_METRIC_HISTORY_DAYS = 260;
-const MAX_METRIC_HISTORY_DAYS = 360;
+const RS_WINDOW = METRIC_WINDOWS.rs;
+const MOMENTUM_WINDOW = METRIC_WINDOWS.rsMomentum;
+const BREADTH_WINDOWS = METRIC_WINDOWS.breadth;
+const PARTICIPATION_WINDOW = METRIC_WINDOWS.participation;
+const DEFAULT_METRIC_HISTORY_DAYS = METRIC_WINDOWS.metricHistoryDefaultDays;
+const MAX_METRIC_HISTORY_DAYS = METRIC_WINDOWS.metricHistoryMaxDays;
 
 type Field = SeriesRow["field"];
 
@@ -118,9 +119,15 @@ function buildSectorMetricRowsForDates(
       });
 
       const sourceMetrics = {
-        relative_strength: rs.evidence,
-        breadth: { ...breadth.evidence, warnings: breadth.warnings },
-        participation: { ...participation.evidence, warnings: participation.warnings },
+        relative_strength: { ...rs.evidence, state: rs.state, strength: rs.strength, transition: rs.transition, warnings: rs.warnings },
+        breadth: { ...breadth.evidence, state: breadth.state, strength: breadth.strength, transition: breadth.transition, warnings: breadth.warnings },
+        participation: {
+          ...participation.evidence,
+          state: participation.state,
+          strength: participation.strength,
+          transition: participation.transition,
+          warnings: participation.warnings,
+        },
         market_context: marketContext,
       };
       const dataFreshness = {
@@ -248,19 +255,19 @@ function buildBreadth(holdingSeries: DailyBar[][]): ModuleSnapshot {
   const state =
     pct20 === null || pct50 === null
       ? "unknown"
-      : pct20 >= 65 && pct50 >= 55
+      : pct20 >= METRIC_THRESHOLDS.breadth.healthyPct20 && pct50 >= METRIC_THRESHOLDS.breadth.healthyPct50
         ? "healthy"
-        : pct20 <= 35 && pct50 <= 40
+        : pct20 <= METRIC_THRESHOLDS.breadth.breakdownPct20 && pct50 <= METRIC_THRESHOLDS.breadth.breakdownPct50
           ? "breakdown"
-          : pct20 >= 60 && pct50 < 45
+          : pct20 >= METRIC_THRESHOLDS.breadth.narrowPct20 && pct50 < METRIC_THRESHOLDS.breadth.narrowPct50
             ? "narrow"
             : "mixed";
   const transition =
     advancingRatio === null
       ? "unknown"
-      : advancingRatio >= 60
+      : advancingRatio >= METRIC_THRESHOLDS.breadth.strengtheningAdvancingRatio
         ? "strengthening"
-        : advancingRatio <= 40
+        : advancingRatio <= METRIC_THRESHOLDS.breadth.weakeningAdvancingRatio
           ? "weakening"
           : "stable";
 
@@ -295,17 +302,20 @@ function buildParticipation(bars: DailyBar[]): ModuleSnapshot {
   const state =
     rvol === null || obvSlope === null || cmf === null
       ? "unknown"
-      : rvol >= 1.05 && obvSlope > 0 && cmf >= 0
+      : rvol >= METRIC_THRESHOLDS.participation.accumulationRvol &&
+          obvSlope > 0 &&
+          cmf >= METRIC_THRESHOLDS.participation.accumulationCmf
         ? "accumulation"
-        : obvSlope < 0 && cmf < 0
+        : obvSlope < 0 && cmf < METRIC_THRESHOLDS.participation.distributionCmf
           ? "distribution"
           : "neutral";
   const transition =
     rvol === null || cmf === null
       ? "unknown"
-      : rvol >= 1.2 && cmf > 0.05
+      : rvol >= METRIC_THRESHOLDS.participation.strengtheningRvol &&
+          cmf > METRIC_THRESHOLDS.participation.strengtheningCmf
         ? "strengthening"
-        : cmf < -0.05
+        : cmf < METRIC_THRESHOLDS.participation.weakeningCmf
           ? "weakening"
           : "stable";
 

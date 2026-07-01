@@ -1,6 +1,13 @@
 import { Database, ListChecks, RotateCcw, ShieldCheck } from "lucide-react";
+import type { CSSProperties } from "react";
 
-import type { HistoryResponse, HistoryTimeframe, SectorsResponse, ValidationResponse } from "../../../types";
+import type {
+  HistoryResponse,
+  HistoryTimeframe,
+  SectorsResponse,
+  ValidationResponse,
+} from "../../../types";
+import type { ValidationReportGuardrail } from "../reportModel";
 import { LayerHeader, PanelHeader } from "./common";
 
 const TIMEFRAMES: HistoryTimeframe[] = ["30D", "90D", "180D"];
@@ -36,12 +43,14 @@ export function LayerFourValidationLab({
   historyTimeframe,
   onHistoryTimeframeChange,
   validation,
+  validationGuardrails,
 }: {
   data: SectorsResponse;
   history: HistoryResponse | null;
   historyTimeframe: HistoryTimeframe;
   onHistoryTimeframeChange: (timeframe: HistoryTimeframe) => void;
   validation: ValidationResponse | null;
+  validationGuardrails?: ValidationReportGuardrail[];
 }) {
   const coverage = validationCoverage(validation);
   const replayWindows = validationReplayWindows(validation, coverage.sector_history_days, history, historyTimeframe);
@@ -55,6 +64,7 @@ export function LayerFourValidationLab({
   const limitations = validation?.limitations ?? [];
   const hasLimitations = limitations.length > 0;
   const completedPatternCount = patternDiagnostics.filter((diagnostic) => diagnostic.status === "ready").length;
+  const thinPatternCount = coverage.thin_pattern_count ?? patternDiagnostics.filter((diagnostic) => diagnostic.status === "thin_sample").length;
   const overviewSteps = validationProgressSteps({
     coverage,
     patternDiagnostics,
@@ -78,20 +88,19 @@ export function LayerFourValidationLab({
 
       <section className="validation-overview-card dashboard-card" aria-label="validation progress overview">
         <div className="validation-overview-copy">
-          <span>현재 진행 상황</span>
+          <span>현재 진행</span>
           <strong>{gateStatus}</strong>
           <p>
-            이력 검증, Replay 범위, 패턴 진단, 표본 관측치를 한 흐름으로 확인합니다. Replay 기간은
-            Replay 상태 안에서 함께 비교합니다.
+            이력, Replay, 패턴, 관측치를 한 줄 흐름으로 압축해 확인합니다.
           </p>
         </div>
-        <div className="validation-overview-grid">
-          <OverviewStepCard
+        <div className="validation-overview-strip">
+          <OverviewStatusChip
             icon="database"
             step={overviewSteps[0]}
             value={`${coverage.sector_history_days}일 / ${coverage.sector_snapshots} samples`}
           />
-          <ReplayOverviewCard
+          <ReplayStatusChip
             activeReplay={activeReplay}
             historyTimeframe={historyTimeframe}
             onHistoryTimeframeChange={onHistoryTimeframeChange}
@@ -99,17 +108,18 @@ export function LayerFourValidationLab({
             replayWindows={replayWindows}
             step={overviewSteps[1]}
           />
-          <OverviewStepCard
+          <OverviewStatusChip
             icon="shield"
             step={overviewSteps[2]}
-            value={`${completedPatternCount}/${patternDiagnostics.length || 0} patterns`}
+            value={`${completedPatternCount}/${patternDiagnostics.length || 0} patterns · thin ${thinPatternCount}`}
           />
-          <OverviewStepCard
+          <OverviewStatusChip
             icon="checks"
             step={overviewSteps[3]}
             value={validation?.expose_probability ? `${probabilityGate} · ${contextCoverage}` : "forward label 확인"}
           />
         </div>
+        <ValidationGuardrailStrip guardrails={validationGuardrails ?? []} />
       </section>
 
       <section className="validation-workspace" aria-label="validation workspace">
@@ -120,7 +130,7 @@ export function LayerFourValidationLab({
             title={patternDiagnostics.length ? "패턴별 이력 진단 결과" : "현재 패턴 검증 준비도"}
           />
           {patternDiagnostics.length ? (
-            <PatternDiagnosticsChart diagnostics={patternDiagnostics} />
+            <PatternDiagnosticsChart diagnostics={patternDiagnostics} exposeProbability={Boolean(validation?.expose_probability)} />
           ) : (
             <PatternReadinessTable patterns={patterns} />
           )}
@@ -145,7 +155,32 @@ export function LayerFourValidationLab({
   );
 }
 
-function OverviewStepCard({
+function ValidationGuardrailStrip({ guardrails }: { guardrails: ValidationReportGuardrail[] }) {
+  if (!guardrails.length) return null;
+
+  return (
+    <div className="validation-guardrail-strip" aria-label="current pattern validation guardrails">
+      <div>
+        <span>현재 판단 검증 연결</span>
+        <strong>{guardrails.length} patterns</strong>
+      </div>
+      <div className="validation-guardrail-list">
+        {guardrails.map((guardrail) => (
+          <span className={guardrail.status} key={guardrail.pattern}>
+            <b>{guardrail.pattern}</b>
+            <em>{guardrail.appliesTo.join(", ")}</em>
+            <small>
+              {guardrail.allowedCopy}
+              {guardrail.observedProbabilityLabel ? ` · ${guardrail.observedProbabilityLabel}` : ""}
+            </small>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OverviewStatusChip({
   icon,
   step,
   value,
@@ -157,19 +192,20 @@ function OverviewStepCard({
   const Icon = icon === "database" ? Database : icon === "checks" ? ListChecks : ShieldCheck;
 
   return (
-    <article className={`validation-overview-step ${step.status}`}>
-      <div>
+    <article className={`validation-overview-chip ${step.status}`}>
+      <div className="validation-chip-label">
         <Icon aria-hidden="true" size={15} />
         <span>{step.label}</span>
       </div>
-      <strong>{step.title}</strong>
-      <small>{step.detail}</small>
-      <em>{value}</em>
+      <div className="validation-chip-main">
+        <strong>{step.title}</strong>
+        <em>{value}</em>
+      </div>
     </article>
   );
 }
 
-function ReplayOverviewCard({
+function ReplayStatusChip({
   activeReplay,
   historyTimeframe,
   onHistoryTimeframeChange,
@@ -185,68 +221,90 @@ function ReplayOverviewCard({
   step: ValidationProgressStep;
 }) {
   return (
-    <article className={`validation-overview-step replay ${step.status}`}>
-      <div>
+    <article className={`validation-overview-chip replay ${step.status}`}>
+      <div className="validation-chip-label">
         <RotateCcw aria-hidden="true" size={15} />
         <span>{step.label}</span>
       </div>
-      <strong>{activeReplay.status}</strong>
-      <small>
-        {activeReplay.effectiveDays}/{activeReplay.requestedDays} days · {step.title}
-      </small>
-      <div className="validation-timeframe-selector compact" aria-label="validation replay timeframe">
-        {TIMEFRAMES.map((timeframe) => (
-          <button
-            aria-pressed={historyTimeframe === timeframe}
-            className={historyTimeframe === timeframe ? "active" : ""}
-            key={timeframe}
-            onClick={() => onHistoryTimeframeChange(timeframe)}
-            type="button"
-          >
-            {timeframe}
-          </button>
-        ))}
+      <div className="validation-replay-body">
+        <div className="validation-replay-main">
+          <div className="validation-chip-main">
+            <strong>{activeReplay.status}</strong>
+            <em>{activeReplay.effectiveDays}/{activeReplay.requestedDays} days · {step.title}</em>
+          </div>
+          <div className="validation-timeframe-selector compact" aria-label="validation replay timeframe">
+            {TIMEFRAMES.map((timeframe) => (
+              <button
+                aria-pressed={historyTimeframe === timeframe}
+                className={historyTimeframe === timeframe ? "active" : ""}
+                key={timeframe}
+                onClick={() => onHistoryTimeframeChange(timeframe)}
+                type="button"
+              >
+                {timeframe}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="replay-window-strip" aria-label="replay window coverage">
+          {replayWindows.map((window) => (
+            <span
+              aria-label={`${window.timeframe} ${window.status} ${window.effectiveDays}/${window.requestedDays}`}
+              className={window.limited ? "limited" : ""}
+              key={window.timeframe}
+            >
+              <b>{window.timeframe}</b>
+              <em>{window.limited ? "제한 " : ""}{window.effectiveDays}/{window.requestedDays}</em>
+            </span>
+          ))}
+        </div>
       </div>
-      <div className="replay-window-strip" aria-label="replay window coverage">
-        {replayWindows.map((window) => (
-          <span className={window.limited ? "limited" : ""} key={window.timeframe}>
-            <b>{window.timeframe}</b>
-            <em>{window.status} · {window.effectiveDays}/{window.requestedDays}</em>
-          </span>
-        ))}
-      </div>
-      <p>{replayCopy}</p>
+      <p className="sr-only">{replayCopy}</p>
     </article>
   );
 }
 
-function PatternDiagnosticsChart({ diagnostics }: { diagnostics: PatternDiagnostic[] }) {
+function PatternDiagnosticsChart({
+  diagnostics,
+  exposeProbability,
+}: {
+  diagnostics: PatternDiagnostic[];
+  exposeProbability: boolean;
+}) {
   return (
-    <div className="pattern-diagnostics-chart" role="figure" aria-label="pattern diagnostics chart">
+    <div className="pattern-diagnostics-chart" role="figure" aria-label="pattern diagnostics matrix">
       <div className="pattern-analysis-header" aria-hidden="true">
         <span>Pattern</span>
-        <span>20D 관측</span>
+        <span>표본 관측</span>
         <span>20D 이후</span>
         <span>60D 이후</span>
         <span>20D 하락</span>
         <span>신뢰도</span>
       </div>
       {diagnostics.map((diagnostic) => (
-        <PatternDiagnosticChartRow diagnostic={diagnostic} key={diagnostic.pattern} />
+        <PatternDiagnosticChartRow
+          diagnostic={diagnostic}
+          exposeProbability={exposeProbability && diagnostic.status === "ready"}
+          key={diagnostic.pattern}
+        />
       ))}
     </div>
   );
 }
 
-function PatternDiagnosticChartRow({ diagnostic }: { diagnostic: PatternDiagnostic }) {
-  const probability = diagnostic.observed_probability_20d ?? 0;
+function PatternDiagnosticChartRow({
+  diagnostic,
+  exposeProbability,
+}: {
+  diagnostic: PatternDiagnostic;
+  exposeProbability: boolean;
+}) {
+  const observedProbability = exposeProbability ? diagnostic.observed_probability_20d : null;
+  const probability = observedProbability ?? 0;
   const reliability = diagnostic.reliability_score ?? 0;
   const return20 = diagnostic.fwd_rel_20d_median ?? 0;
   const return60 = diagnostic.fwd_rel_60d_median ?? 0;
   const drawdown20 = diagnostic.max_drawdown_20d_median ?? 0;
-  const return20Width = Math.min(100, (Math.abs(return20) / 5) * 100);
-  const return60Width = Math.min(100, (Math.abs(return60) / 5) * 100);
-  const drawdownWidth = Math.min(100, (Math.abs(drawdown20) / 8) * 100);
 
   return (
     <article className="pattern-chart-row" aria-label={patternChartAriaLabel(diagnostic)}>
@@ -259,89 +317,114 @@ function PatternDiagnosticChartRow({ diagnostic }: { diagnostic: PatternDiagnost
         </div>
       </header>
       <div className="pattern-chart-cells">
-        <MetricBar
+        <HeatMetricCell
           className="probability"
-          label="20D 관측"
-          value={formatObservedProbability(diagnostic.observed_probability_20d)}
-          width={Math.min(100, Math.max(0, probability))}
+          detail={
+            exposeProbability
+              ? `${diagnostic.positive_20d_count ?? 0}/${diagnostic.evaluated_20d} positive`
+              : qualityWarningLabel(diagnostic.quality_warnings?.[0] ?? diagnostic.status)
+          }
+          intensity={probability}
+          label="표본 관측"
+          value={exposeProbability ? formatObservedProbability(observedProbability) : "표본 부족"}
         />
-        <SignedMetricBar
+        <SignedMetricCell
           className="return20"
           label="20D 이후"
+          scale={5}
           value={formatSignedMetric(diagnostic.fwd_rel_20d_median)}
-          width={return20Width}
           signedValue={return20}
         />
-        <SignedMetricBar
+        <SignedMetricCell
           className="return60"
           label="60D 이후"
+          scale={5}
           value={formatSignedMetric(diagnostic.fwd_rel_60d_median)}
-          width={return60Width}
           signedValue={return60}
         />
-        <SignedMetricBar
+        <SignedMetricCell
           className="drawdown"
           label="20D 하락"
+          scale={8}
           value={formatSignedMetric(diagnostic.max_drawdown_20d_median)}
-          width={drawdownWidth}
           signedValue={drawdown20}
         />
-        <MetricBar
+        <HeatMetricCell
           className="reliability"
+          detail={reliabilityLabel(diagnostic.reliability_label ?? "")}
+          intensity={reliability}
           label="신뢰도"
           value={formatReliability(diagnostic.reliability_score, diagnostic.reliability_label)}
-          width={Math.min(100, Math.max(0, reliability))}
         />
       </div>
       <p>
-        양수 라벨 {diagnostic.positive_20d_count ?? 0}/{diagnostic.evaluated_20d} · 20D 후 Leading {diagnostic.leading_after_20d_count}
+        라벨 {diagnostic.evaluated_20d}/{diagnostic.sample_size}
+        {diagnostic.evaluated_ratio_20d != null ? ` (${diagnostic.evaluated_ratio_20d.toFixed(1)}%)` : ""} ·
+        20D 후 Leading {diagnostic.leading_after_20d_count}
       </p>
     </article>
   );
 }
 
-function MetricBar({
+function HeatMetricCell({
   className,
+  detail,
+  intensity,
   label,
   value,
-  width,
 }: {
   className: string;
+  detail: string;
+  intensity: number;
   label: string;
   value: string;
-  width: number;
 }) {
+  const normalizedIntensity = Math.min(1, Math.max(0, intensity / 100));
+  const primaryAlpha = 0.06 + normalizedIntensity * 0.2;
+  const secondaryAlpha = 0.04 + normalizedIntensity * 0.18;
+  const veilAlpha = 0.88 - normalizedIntensity * 0.24;
+
   return (
-    <div className={`pattern-metric-bar ${className}`}>
+    <div
+      className={`pattern-metric-cell heat ${className}`}
+      style={
+        {
+          "--cell-primary-alpha": primaryAlpha.toFixed(3),
+          "--cell-secondary-alpha": secondaryAlpha.toFixed(3),
+          "--cell-veil-alpha": veilAlpha.toFixed(3),
+        } as CSSProperties
+      }
+    >
       <span>{label}</span>
-      <i>
-        <b style={{ width: `${width}%` }} />
-      </i>
       <strong>{value}</strong>
+      <small>{detail}</small>
     </div>
   );
 }
 
-function SignedMetricBar({
+function SignedMetricCell({
   className,
   label,
+  scale,
   signedValue,
   value,
-  width,
 }: {
   className: string;
   label: string;
+  scale: number;
   signedValue: number;
   value: string;
-  width: number;
 }) {
+  const position = Math.min(100, Math.max(0, 50 + (signedValue / scale) * 50));
+
   return (
-    <div className={`pattern-metric-bar signed ${className} ${signedValue < 0 ? "negative" : "positive"}`}>
+    <div className={`pattern-metric-cell signed ${className} ${signedValue < 0 ? "negative" : "positive"}`}>
       <span>{label}</span>
-      <i>
-        <b style={{ width: `${width}%` }} />
-      </i>
       <strong>{value}</strong>
+      <i aria-hidden="true">
+        <b style={{ left: `${position}%` }} />
+      </i>
+      <small>{signedValue < 0 ? "약화 구간" : "개선 구간"}</small>
     </div>
   );
 }
@@ -358,7 +441,7 @@ function validationProgressSteps({
   validation: ValidationResponse | null;
 }): ValidationProgressStep[] {
   const replayReady = replayWindows.filter((window) => !window.limited).length;
-  const completedPatterns = patternDiagnostics.filter((diagnostic) => diagnostic.status === "ready").length;
+  const completedPatterns = coverage.pattern_ready_count ?? patternDiagnostics.filter((diagnostic) => diagnostic.status === "ready").length;
   const hasHistory = coverage.sector_history_days >= 60;
   const diagnosticsReady = validation?.status === "historical_ready" && completedPatterns > 0;
 
@@ -384,8 +467,8 @@ function validationProgressSteps({
     {
       detail: validation?.expose_probability ? "누적 표본 신뢰도와 함께 표시" : "forward label 연결 후 표시",
       label: "관측치",
-      status: validation?.expose_probability ? "complete" : "pending",
-      title: validation?.expose_probability ? "표본 확률 표시" : "표본 확률 대기",
+      status: validation?.expose_probability && completedPatterns > 0 ? "complete" : "pending",
+      title: validation?.expose_probability && completedPatterns > 0 ? "표본 확률 표시" : "표본 확률 대기",
     },
   ];
 }
@@ -436,10 +519,14 @@ function PatternReadinessTable({ patterns }: { patterns: PatternReadiness[] }) {
 function validationCoverage(validation: ValidationResponse | null) {
   return (
     validation?.coverage ?? {
+      evaluated_forward_labels_20d: 0,
+      evaluated_forward_labels_60d: 0,
       market_context_days: 0,
       market_context_points: 0,
+      pattern_ready_count: 0,
       sector_history_days: 0,
       sector_snapshots: 0,
+      thin_pattern_count: 0,
     }
   );
 }
@@ -580,6 +667,15 @@ function patternChartAriaLabel(diagnostic: PatternDiagnostic) {
     `20D 하락 ${formatSignedMetric(diagnostic.max_drawdown_20d_median)}`,
     `신뢰도 ${formatReliability(diagnostic.reliability_score, diagnostic.reliability_label)}`,
   ].join(", ");
+}
+
+function qualityWarningLabel(warning: string) {
+  if (warning === "thin_20d_sample" || warning === "thin_sample") return "20D 표본 부족";
+  if (warning === "thin_60d_sample") return "60D 표본 부족";
+  if (warning === "forward_20d_labels_missing") return "forward label 대기";
+  if (warning === "forward_label_coverage_under_50pct") return "라벨 커버리지 낮음";
+  if (warning === "history_under_60_days") return "이력 부족";
+  return "관측치 대기";
 }
 
 function reliabilityLabel(label: string) {

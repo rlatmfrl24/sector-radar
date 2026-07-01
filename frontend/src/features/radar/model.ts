@@ -1,6 +1,8 @@
 import type { MarketContextAvailability, SectorSnapshot } from "../../types";
 
-export type RadarView = "layer1" | "layer2" | "leadership" | "validation";
+export type RadarLayerView = "layer1" | "layer2" | "leadership" | "validation";
+export type RadarSurfaceMode = "result" | "collection";
+export type RadarView = RadarLayerView;
 
 export const quadrantLabels: Record<SectorSnapshot["quadrant"], string> = {
   leading: "Leading",

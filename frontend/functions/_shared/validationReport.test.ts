@@ -28,10 +28,14 @@ describe("Layer 4 validation report", () => {
     expect(report.expose_probability).toBe(true);
     expect(report.probability_mode).toBe("sample_observed");
     expect(report.coverage).toMatchObject({
+      evaluated_forward_labels_20d: 160,
+      evaluated_forward_labels_60d: 80,
       market_context_days: 80,
       market_context_points: 320,
+      pattern_ready_count: 2,
       sector_history_days: 100,
       sector_snapshots: 200,
+      thin_pattern_count: 0,
     });
     expect(report.replay_windows.find((window) => window.timeframe === "90D")).toMatchObject({
       effective_days: 90,
@@ -50,7 +54,9 @@ describe("Layer 4 validation report", () => {
           observed_probability_20d: 100,
           positive_20d_count: 80,
           pattern: "Emerging Leader",
+          quality_warnings: ["sample_observed_only_not_calibrated"],
           reliability_label: "medium",
+          evaluated_ratio_20d: 80,
           sample_size: 100,
           status: "ready",
         }),
@@ -86,6 +92,7 @@ describe("Layer 4 validation report", () => {
     expect(report.pattern_diagnostics[0]).toMatchObject({
       evaluated_20d: 15,
       reliability_label: "low",
+      observed_probability_20d: null,
       status: "collecting",
     });
     expect(report.replay_windows[0]).toMatchObject({
@@ -99,6 +106,34 @@ describe("Layer 4 validation report", () => {
     expect(report.limitations).toEqual(
       expect.arrayContaining(["At least 60 sector history days are required before Layer 4 can show diagnostics."]),
     );
+  });
+
+  it("keeps globally ready diagnostics from exposing thin pattern observations", () => {
+    const dates = makeDates(85);
+    const metrics: ValidationMetricRow[] = [
+      ...dates.map((date) => metric("SMH", date, "Strong Leader", "leading")),
+      ...dates.slice(56).map((date) => metric("XLK", date, "False Leadership", "leading")),
+    ];
+    const closes: ValidationCloseRow[] = [
+      ...closeSeries("SPY", dates, 100, 0.3),
+      ...closeSeries("SMH", dates, 100, 0.6),
+      ...closeSeries("XLK", dates, 100, 0.2),
+    ];
+
+    const report = buildLayerFourValidationReportFromRows(metrics, closes);
+    const thinPattern = report.pattern_diagnostics.find((item) => item.pattern === "False Leadership");
+
+    expect(report.status).toBe("historical_ready");
+    expect(report.expose_probability).toBe(true);
+    expect(report.coverage).toMatchObject({
+      pattern_ready_count: 1,
+      thin_pattern_count: 1,
+    });
+    expect(thinPattern).toMatchObject({
+      observed_probability_20d: null,
+      quality_warnings: expect.arrayContaining(["thin_20d_sample"]),
+      status: "thin_sample",
+    });
   });
 });
 

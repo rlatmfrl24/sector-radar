@@ -46,6 +46,8 @@ export interface ValidationRunLog {
 }
 
 export interface PatternDiagnostic {
+  evaluated_ratio_20d: number | null;
+  evaluated_ratio_60d: number | null;
   evaluated_20d: number;
   evaluated_60d: number;
   fwd_rel_20d_median: number | null;
@@ -58,6 +60,7 @@ export interface PatternDiagnostic {
   pattern: string;
   positive_20d_count: number;
   positive_60d_count: number;
+  quality_warnings: string[];
   reliability_label: ReliabilityLabel;
   reliability_score: number;
   sample_size: number;
@@ -75,10 +78,14 @@ export interface ReplayWindowDiagnostic {
 
 export interface LayerFourValidationReport {
   coverage: {
+    evaluated_forward_labels_20d: number;
+    evaluated_forward_labels_60d: number;
     market_context_days: number;
     market_context_points: number;
+    pattern_ready_count: number;
     sector_history_days: number;
     sector_snapshots: number;
+    thin_pattern_count: number;
   };
   expose_probability: boolean;
   limitations: string[];
@@ -106,6 +113,8 @@ interface ForwardObservation {
   fwd60: number | null;
   futureQuadrant20: string | null;
 }
+
+const MIN_PATTERN_EVALUATED_20D = 20;
 
 export async function buildLayerFourValidationReport(
   db: D1QueryDatabase,
@@ -154,18 +163,25 @@ export function buildLayerFourValidationReportFromRows(
     .map(([pattern, bucket]) => patternDiagnostic(pattern, bucket.sampleSize, bucket.observations, sectorHistoryDays))
     .sort((a, b) => b.evaluated_20d - a.evaluated_20d || b.sample_size - a.sample_size || a.pattern.localeCompare(b.pattern));
   const evaluatedSamples = patternDiagnostics.reduce((sum, item) => sum + item.evaluated_20d, 0);
+  const evaluatedSamples60 = patternDiagnostics.reduce((sum, item) => sum + item.evaluated_60d, 0);
+  const readyPatternCount = patternDiagnostics.filter((item) => item.status === "ready").length;
+  const thinPatternCount = patternDiagnostics.filter((item) => item.status === "thin_sample").length;
   const status = validationStatus(sectorHistoryDays, evaluatedSamples);
-  const exposeProbability = status === "historical_ready" && evaluatedSamples > 0;
+  const exposeProbability = status === "historical_ready" && readyPatternCount > 0;
 
   return {
     coverage: {
+      evaluated_forward_labels_20d: evaluatedSamples,
+      evaluated_forward_labels_60d: evaluatedSamples60,
       market_context_days: contextCoverage.market_context_days,
       market_context_points: contextCoverage.market_context_points,
+      pattern_ready_count: readyPatternCount,
       sector_history_days: sectorHistoryDays,
       sector_snapshots: sectorSnapshots,
+      thin_pattern_count: thinPatternCount,
     },
     expose_probability: exposeProbability,
-    limitations: validationLimitations(status, evaluatedSamples),
+    limitations: validationLimitations(status, evaluatedSamples, readyPatternCount),
     pattern_diagnostics: patternDiagnostics,
     probability_mode: exposeProbability ? "sample_observed" : "hidden",
     replay_windows: replayWindows(sectorHistoryDays),
@@ -207,10 +223,14 @@ export async function readLatestValidationRun(db: D1QueryDatabase): Promise<Vali
 function emptyValidationReport(limitations: string[]): LayerFourValidationReport {
   return {
     coverage: {
+      evaluated_forward_labels_20d: 0,
+      evaluated_forward_labels_60d: 0,
       market_context_days: 0,
       market_context_points: 0,
+      pattern_ready_count: 0,
       sector_history_days: 0,
       sector_snapshots: 0,
+      thin_pattern_count: 0,
     },
     expose_probability: false,
     limitations,
@@ -358,8 +378,11 @@ function patternDiagnostic(
   const positive20 = fwd20.filter((value) => value > 0).length;
   const positive60 = fwd60.filter((value) => value > 0).length;
   const reliabilityScore = patternReliabilityScore(historyDays, fwd20.length, fwd60.length);
+  const qualityWarnings = patternQualityWarnings(status, sampleSize, fwd20.length, fwd60.length, historyDays);
 
   return {
+    evaluated_ratio_20d: evaluatedRatio(fwd20.length, sampleSize),
+    evaluated_ratio_60d: evaluatedRatio(fwd60.length, sampleSize),
     evaluated_20d: fwd20.length,
     evaluated_60d: fwd60.length,
     fwd_rel_20d_median: median(fwd20),
@@ -367,11 +390,12 @@ function patternDiagnostic(
     leading_after_20d_count: leadingAfter20,
     max_drawdown_20d_median: median(drawdown20),
     next_step: patternNextStep(status),
-    observed_probability_20d: observedProbability(positive20, fwd20.length),
-    observed_probability_60d: observedProbability(positive60, fwd60.length),
+    observed_probability_20d: status === "ready" ? observedProbability(positive20, fwd20.length) : null,
+    observed_probability_60d: status === "ready" ? observedProbability(positive60, fwd60.length) : null,
     pattern,
     positive_20d_count: positive20,
     positive_60d_count: positive60,
+    quality_warnings: qualityWarnings,
     reliability_label: reliabilityLabel(reliabilityScore),
     reliability_score: reliabilityScore,
     sample_size: sampleSize,
@@ -382,6 +406,11 @@ function patternDiagnostic(
 function observedProbability(positiveCount: number, sampleCount: number) {
   if (sampleCount === 0) return null;
   return roundOne((positiveCount / sampleCount) * 100);
+}
+
+function evaluatedRatio(evaluated: number, sampleSize: number) {
+  if (sampleSize === 0) return null;
+  return roundOne((evaluated / sampleSize) * 100);
 }
 
 function patternReliabilityScore(historyDays: number, evaluated20: number, evaluated60: number) {
@@ -399,7 +428,7 @@ function reliabilityLabel(score: number): ReliabilityLabel {
 
 function patternStatus(historyDays: number, evaluated20: number): PatternDiagnosticStatus {
   if (historyDays < 60 || evaluated20 === 0) return "collecting";
-  if (evaluated20 < 20) return "thin_sample";
+  if (evaluated20 < MIN_PATTERN_EVALUATED_20D) return "thin_sample";
   return "ready";
 }
 
@@ -415,13 +444,33 @@ function validationStatus(historyDays: number, evaluatedSamples: number): Valida
   return "unvalidated";
 }
 
-function validationLimitations(status: ValidationStatus, evaluatedSamples: number) {
+function patternQualityWarnings(
+  status: PatternDiagnosticStatus,
+  sampleSize: number,
+  evaluated20: number,
+  evaluated60: number,
+  historyDays: number,
+) {
+  const warnings: string[] = [];
+  if (historyDays < 60) warnings.push("history_under_60_days");
+  if (evaluated20 === 0) warnings.push("forward_20d_labels_missing");
+  if (evaluated20 > 0 && evaluated20 < MIN_PATTERN_EVALUATED_20D) warnings.push("thin_20d_sample");
+  if (evaluated60 > 0 && evaluated60 < MIN_PATTERN_EVALUATED_20D) warnings.push("thin_60d_sample");
+  if (sampleSize > 0 && evaluated20 / sampleSize < 0.5) warnings.push("forward_label_coverage_under_50pct");
+  if (status === "ready" && warnings.length === 0) warnings.push("sample_observed_only_not_calibrated");
+  return warnings;
+}
+
+function validationLimitations(status: ValidationStatus, evaluatedSamples: number, readyPatternCount: number) {
   const limitations: string[] = [];
   if (status === "insufficient_history") {
     limitations.push("At least 60 sector history days are required before Layer 4 can show diagnostics.");
   }
   if (evaluatedSamples === 0) {
     limitations.push("Forward labels are not available yet for the current history window.");
+  }
+  if (status === "historical_ready" && readyPatternCount === 0) {
+    limitations.push("Forward labels exist, but no pattern has enough evaluated samples for sample-observed probability.");
   }
   return limitations;
 }

@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
-  ContextRail,
   DashboardTopBar,
-  FreshnessBar,
+  DataCollectionView,
   LayerFourValidationLab,
   LayerOneFlowView,
   LayerThreeLeadership,
@@ -17,8 +16,10 @@ import {
   isWeakBreadth,
   sortSectors,
   sortSectorsByMomentum,
+  type RadarSurfaceMode,
   type RadarView,
 } from "./features/radar/model";
+import { buildResearchBrief } from "./features/radar/reportModel";
 import { loadHistory, refreshData } from "./lib/api";
 import {
   loadDashboardSnapshot,
@@ -26,15 +27,15 @@ import {
   snapshotSyncInterval,
   type DashboardSnapshot,
 } from "./lib/dashboardSnapshot";
-import { readExplainModePreference, writeExplainModePreference } from "./lib/explainMode";
-import type { HistoryResponse, HistoryTimeframe, SectorsResponse, ValidationResponse } from "./types";
+import type { DashboardDataQuality, HistoryResponse, HistoryTimeframe, SectorsResponse, ValidationResponse } from "./types";
 
 function App() {
   const [data, setData] = useState<SectorsResponse | null>(null);
   const [history, setHistory] = useState<HistoryResponse | null>(null);
+  const [quality, setQuality] = useState<DashboardDataQuality | null>(null);
   const [validation, setValidation] = useState<ValidationResponse | null>(null);
   const [activeView, setActiveView] = useState<RadarView>("layer1");
-  const [explainMode, setExplainMode] = useState(() => readExplainModePreference());
+  const [activeSurface, setActiveSurface] = useState<RadarSurfaceMode>("result");
   const [historyTimeframe, setHistoryTimeframe] = useState<HistoryTimeframe>("90D");
   const [selectedCode, setSelectedCode] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -43,6 +44,7 @@ function App() {
     (snapshot: DashboardSnapshot, preserveSelected: boolean) => {
       setData(snapshot.data);
       setHistory(snapshot.history);
+      setQuality(snapshot.quality);
       setValidation(snapshot.validation);
       setSelectedCode((current) => selectSnapshotSectorCode(current, sortSectors(snapshot.data.sectors), preserveSelected));
     },
@@ -111,6 +113,10 @@ function App() {
   const warnings = useMemo(() => sectors.filter(isWarningSector), [sectors]);
   const healthyBreadthCount = sectors.filter(hasHealthyBreadth).length;
   const weakBreadthCount = sectors.filter(isWeakBreadth).length;
+  const researchBrief = useMemo(
+    () => (data ? buildResearchBrief({ data, history, quality, validation }) : null),
+    [data, history, quality, validation],
+  );
 
   async function handleRefresh() {
     setIsRefreshing(true);
@@ -129,11 +135,6 @@ function App() {
     setHistory(await loadHistory(timeframe));
   }
 
-  function handleExplainModeChange(nextExplainMode: boolean) {
-    setExplainMode(nextExplainMode);
-    writeExplainModePreference(nextExplainMode);
-  }
-
   if (!data || !selected) {
     return <LoadingScreen />;
   }
@@ -141,21 +142,21 @@ function App() {
   return (
     <main className="dashboard-shell">
       <DashboardTopBar
+        activeSurface={activeSurface}
         activeView={activeView}
         data={data}
-        explainMode={explainMode}
         isRefreshing={isRefreshing}
-        onExplainModeChange={handleExplainModeChange}
         onRefresh={handleRefresh}
+        onSurfaceChange={setActiveSurface}
         onViewChange={setActiveView}
         validation={validation}
       />
       <section className="view-workspace" aria-label="sector radar workspace">
-        <FreshnessBar activeView={activeView} data={data} />
-        <ContextRail activeView={activeView} data={data} validation={validation} />
-        {activeView === "layer1" ? (
+        {activeSurface === "collection" ? (
+          <DataCollectionView activeView={activeView} data={data} quality={quality} validation={validation} />
+        ) : activeView === "layer1" ? (
           <LayerOneFlowView
-            explainMode={explainMode}
+            explainMode={false}
             grouped={grouped}
             healthyBreadthCount={healthyBreadthCount}
             layerOneFlow={data.layer1_flow}
@@ -175,6 +176,7 @@ function App() {
         ) : activeView === "leadership" ? (
           <LayerThreeLeadership
             currentLeader={rankedSectors[0]}
+            leadershipReconciliation={data.leadership_reconciliation}
             onSelect={setSelectedCode}
             momentumLeader={momentumSectors[0]}
             sectors={momentumSectors}
@@ -193,6 +195,7 @@ function App() {
             historyTimeframe={historyTimeframe}
             onHistoryTimeframeChange={handleHistoryTimeframeChange}
             validation={validation}
+            validationGuardrails={researchBrief?.validation_guardrails}
           />
         )}
       </section>

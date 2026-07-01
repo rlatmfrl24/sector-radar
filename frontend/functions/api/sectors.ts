@@ -1,10 +1,18 @@
 import { readDataConnection, readDataConnections } from "../_shared/dataConnection";
+import { buildLeadershipReconciliation, buildSectorsDataQuality } from "../_shared/dataQuality";
 import {
   buildLayerOneFlowSnapshot,
   LAYER_ONE_SERIES,
   type LayerOneSeriesRow,
 } from "../_shared/layerOneFlow";
 import { readLatestMarketContext } from "../_shared/marketContext";
+import {
+  breadthStateStrength,
+  classifyRelativeStrengthState,
+  classifyRelativeStrengthTransition,
+  participationStateStrength,
+  relativeStrengthClassStrength,
+} from "../_shared/metricThresholds";
 import { buildRadarDerived } from "../_shared/radarDerived";
 import { normalizeSectorName } from "../../src/lib/sectorNames";
 
@@ -54,6 +62,7 @@ interface SectorMetricRow {
 }
 
 interface SourceMetrics {
+  relative_strength?: unknown;
   breadth?: unknown;
   participation?: unknown;
   [key: string]: unknown;
@@ -82,6 +91,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       marketContext,
       sectors: [],
     });
+    const dataQuality = buildSectorsDataQuality({
+      asOf: null,
+      layer1Flow,
+      marketContext,
+      sectors: [],
+      sourceFreshness: derived.source_freshness ?? [],
+    });
 
     return json({
       as_of: null,
@@ -94,6 +110,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       market_context: marketContext,
       layer1_flow: layer1Flow,
       concentration,
+      data_quality: dataQuality,
+      leadership_reconciliation: buildLeadershipReconciliation([]),
       ...derived,
     });
   }
@@ -133,6 +151,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
     marketContext,
     sectors,
   });
+  const dataQuality = buildSectorsDataQuality({
+    asOf: latest.as_of,
+    layer1Flow,
+    marketContext,
+    sectors,
+    sourceFreshness: derived.source_freshness ?? [],
+  });
 
   return json({
     as_of: latest.as_of,
@@ -145,6 +170,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
     market_context: marketContext,
     layer1_flow: layer1Flow,
     concentration,
+    data_quality: dataQuality,
+    leadership_reconciliation: buildLeadershipReconciliation(sectors),
     ...derived,
   });
 };
@@ -160,6 +187,9 @@ function toSectorSnapshot(row: SectorMetricRow) {
     rs_ratio: row.rs_ratio,
     rs_momentum: row.rs_momentum,
   };
+  const rsState = moduleState(sourceMetrics.relative_strength) ?? classifyRelativeStrengthState(row.rs_ratio);
+  const rsTransition =
+    moduleTransition(sourceMetrics.relative_strength) ?? classifyRelativeStrengthTransition(row.rs_momentum);
 
   return {
     as_of: row.date,
@@ -169,23 +199,23 @@ function toSectorSnapshot(row: SectorMetricRow) {
     quadrant: row.rrg_quadrant ?? "unknown",
     modules: {
       relative_strength: {
-        state: classifyRs(row.rs_ratio),
-        transition: classifyMomentum(row.rs_momentum),
-        strength: row.rs_ratio == null ? 0 : Math.min(4, Math.max(1, Math.round(row.rs_ratio / 34))),
+        state: rsState,
+        transition: rsTransition,
+        strength: moduleStrength(sourceMetrics.relative_strength) ?? relativeStrengthClassStrength(rsState),
         evidence: relativeStrengthEvidence,
-        warnings: [],
+        warnings: moduleWarnings(sourceMetrics.relative_strength, row.rs_ratio == null || row.rs_momentum == null ? ["insufficient_rs_history"] : []),
       },
       breadth: {
         state: row.breadth_state ?? "unknown",
         transition: row.breadth_transition ?? "unknown",
-        strength: row.breadth_state ? 2 : 0,
+        strength: moduleStrength(sourceMetrics.breadth) ?? breadthStateStrength(row.breadth_state),
         evidence: moduleEvidence(sourceMetrics.breadth),
         warnings: moduleWarnings(sourceMetrics.breadth, row.breadth_state ? [] : ["not_available"]),
       },
       participation: {
         state: row.participation_state ?? "unknown",
         transition: row.participation_transition ?? "unknown",
-        strength: row.participation_state ? 2 : 0,
+        strength: moduleStrength(sourceMetrics.participation) ?? participationStateStrength(row.participation_state),
         evidence: moduleEvidence(sourceMetrics.participation),
         warnings: moduleWarnings(sourceMetrics.participation, row.participation_state ? [] : ["not_available"]),
       },
@@ -209,20 +239,6 @@ function toSectorSnapshot(row: SectorMetricRow) {
   };
 }
 
-function classifyRs(value: number | null): string {
-  if (value == null) return "unknown";
-  if (value >= 102) return "strong";
-  if (value < 98) return "weak";
-  return "average";
-}
-
-function classifyMomentum(value: number | null): string {
-  if (value == null) return "unknown";
-  if (value >= 101) return "strengthening";
-  if (value < 99) return "weakening";
-  return "stable";
-}
-
 function parseJson<T>(value: string | null, fallback: T): T {
   if (!value) return fallback;
   try {
@@ -242,6 +258,9 @@ function objectValue(value: unknown): Record<string, unknown> {
 function moduleEvidence(value: unknown): Record<string, unknown> {
   const evidence = { ...objectValue(value) };
   delete evidence.warnings;
+  delete evidence.state;
+  delete evidence.transition;
+  delete evidence.strength;
   return evidence;
 }
 
@@ -250,6 +269,21 @@ function moduleWarnings(value: unknown, fallback: string[]): string[] {
   const warnings = (value as { warnings?: unknown }).warnings;
   if (!Array.isArray(warnings)) return fallback;
   return warnings.filter((warning): warning is string => typeof warning === "string");
+}
+
+function moduleState(value: unknown): string | null {
+  const state = objectValue(value).state;
+  return typeof state === "string" ? state : null;
+}
+
+function moduleTransition(value: unknown): string | null {
+  const transition = objectValue(value).transition;
+  return typeof transition === "string" ? transition : null;
+}
+
+function moduleStrength(value: unknown): number | null {
+  const strength = Number(objectValue(value).strength);
+  return Number.isFinite(strength) ? strength : null;
 }
 
 function json(body: unknown): Response {

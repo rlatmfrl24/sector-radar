@@ -46,6 +46,8 @@ describe("dashboard snapshot flow", () => {
     expect(snapshot.data).toBe(sourceExampleSectorsResponse);
     expect(snapshot.history).toBe(history);
     expect(snapshot.validation).toBe(validation);
+    expect(snapshot.quality.layers.layer1.status).toBe("complete");
+    expect(snapshot.quality.layers.layer4?.status).toBe("blocked");
     expect(snapshot.data.market_context?.length).toBeGreaterThan(0);
     expect(snapshot.data.layer1_flow?.state).toBeDefined();
   });

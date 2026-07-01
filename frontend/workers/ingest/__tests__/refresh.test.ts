@@ -833,6 +833,18 @@ describe("Cloudflare ingest refresh", () => {
     expect(metrics.length).toBeGreaterThanOrEqual(10);
     expect(metrics[0]?.validation_status).toBe("unvalidated");
     expect(metrics[0]?.expose_probability).toBe(0);
+    const sourceMetrics = JSON.parse(metrics[0]?.source_metrics_json ?? "{}") as {
+      breadth?: { state?: string; strength?: number };
+      participation?: { state?: string; strength?: number };
+      relative_strength?: { momentum_window?: number; rs_window?: number; state?: string; strength?: number };
+    };
+    expect(sourceMetrics.relative_strength).toMatchObject({
+      momentum_window: 10,
+      rs_window: 50,
+    });
+    expect(sourceMetrics.relative_strength?.state).toBeTruthy();
+    expect(sourceMetrics.breadth?.strength).toBeTypeOf("number");
+    expect(sourceMetrics.participation?.strength).toBeTypeOf("number");
   });
 
   it("backfills bounded sector metric history from stored price series", () => {

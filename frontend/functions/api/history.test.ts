@@ -22,7 +22,7 @@ describe("history API coverage", () => {
   });
 
   it("marks sparse history as limited by available data", () => {
-    expect(buildHistoryCoverage("90D", 7)).toEqual({
+    expect(buildHistoryCoverage("90D", 7)).toMatchObject({
       requested_days: 90,
       available_sector_days: 7,
       effective_days: 7,
@@ -31,11 +31,29 @@ describe("history API coverage", () => {
   });
 
   it("degrades empty or invalid coverage to zero available days", () => {
-    expect(buildHistoryCoverage("30D", null)).toEqual({
+    expect(buildHistoryCoverage("30D", null)).toMatchObject({
       requested_days: 30,
       available_sector_days: 0,
       effective_days: 0,
       limited_by_data: true,
+    });
+  });
+
+  it("adds sector completeness metadata when supplied", () => {
+    expect(
+      buildHistoryCoverage("90D", 120, {
+        complete_sector_days: 87,
+        max_sector_days: 90,
+        min_sector_days: 42,
+        missing_sector_codes: ["XLU"],
+        sector_count: 11,
+      }),
+    ).toMatchObject({
+      complete_sector_days: 87,
+      max_sector_days: 90,
+      min_sector_days: 42,
+      missing_sector_codes: ["XLU"],
+      sector_count: 11,
     });
   });
 

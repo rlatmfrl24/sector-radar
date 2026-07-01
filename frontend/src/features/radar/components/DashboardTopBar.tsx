@@ -1,7 +1,7 @@
-import { BookOpen, Info, RefreshCw } from "lucide-react";
+import { Info, RefreshCw } from "lucide-react";
 
 import type { SectorsResponse, ValidationResponse } from "../../../types";
-import type { RadarView } from "../model";
+import type { RadarSurfaceMode, RadarView } from "../model";
 
 type StatusTone = "default" | "guard" | "risk";
 
@@ -14,20 +14,20 @@ interface HeaderStatusItem {
 
 export function DashboardTopBar({
   activeView,
+  activeSurface,
   data,
-  explainMode,
   isRefreshing,
-  onExplainModeChange,
   onRefresh,
+  onSurfaceChange,
   onViewChange,
   validation,
 }: {
   activeView: RadarView;
+  activeSurface: RadarSurfaceMode;
   data: SectorsResponse;
-  explainMode: boolean;
   isRefreshing: boolean;
-  onExplainModeChange: (enabled: boolean) => void;
   onRefresh: () => void;
+  onSurfaceChange: (surface: RadarSurfaceMode) => void;
   onViewChange: (view: RadarView) => void;
   validation?: ValidationResponse | null;
 }) {
@@ -59,9 +59,7 @@ export function DashboardTopBar({
             value={item.value}
           />
         ))}
-        {activeView === "layer1" ? (
-          <ExplainModeToggle enabled={explainMode} onChange={onExplainModeChange} />
-        ) : null}
+        <SurfaceSwitch activeSurface={activeSurface} onSurfaceChange={onSurfaceChange} />
         <button
           aria-label={refreshTooltip}
           className="refresh-button has-tooltip"
@@ -78,28 +76,32 @@ export function DashboardTopBar({
   );
 }
 
-function ExplainModeToggle({
-  enabled,
-  onChange,
+function SurfaceSwitch({
+  activeSurface,
+  onSurfaceChange,
 }: {
-  enabled: boolean;
-  onChange: (enabled: boolean) => void;
+  activeSurface: RadarSurfaceMode;
+  onSurfaceChange: (surface: RadarSurfaceMode) => void;
 }) {
-  const tooltip = enabled
-    ? "전문 대시보드 화면으로 돌아갑니다."
-    : "Layer 1 흐름을 초보자용 쉬운 해설 화면으로 전환합니다.";
   return (
-    <button
-      aria-label={`${enabled ? "쉬운 화면 켜짐" : "쉬운 화면 꺼짐"}. ${tooltip}`}
-      aria-pressed={enabled}
-      className={`explain-toggle ${enabled ? "active" : ""} has-tooltip`}
-      data-tooltip={tooltip}
-      onClick={() => onChange(!enabled)}
-      type="button"
-    >
-      <BookOpen aria-hidden="true" size={14} />
-      <span>{enabled ? "전문 화면" : "쉬운 화면"}</span>
-    </button>
+    <div className="surface-switch" role="group" aria-label="layer screen mode">
+      <button
+        aria-pressed={activeSurface === "result"}
+        className={activeSurface === "result" ? "active" : ""}
+        onClick={() => onSurfaceChange("result")}
+        type="button"
+      >
+        결과
+      </button>
+      <button
+        aria-pressed={activeSurface === "collection"}
+        className={activeSurface === "collection" ? "active" : ""}
+        onClick={() => onSurfaceChange("collection")}
+        type="button"
+      >
+        수집
+      </button>
+    </div>
   );
 }
 

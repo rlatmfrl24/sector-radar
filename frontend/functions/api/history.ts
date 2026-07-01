@@ -38,6 +38,14 @@ interface HistoryCoverageRow {
   days: number | null;
 }
 
+interface HistoryCompleteness {
+  complete_sector_days: number;
+  max_sector_days: number;
+  min_sector_days: number;
+  missing_sector_codes: string[];
+  sector_count: number;
+}
+
 const ACTIVE_MARKET_CONTEXT_CODES = ["S01", "S02", "S03", "S05"] as const;
 
 export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
@@ -90,13 +98,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
         .all<HistoryCoverageRow>(),
     ]);
     const availableDays = coverageRows.results?.[0]?.days ?? 0;
+    const sectorHistoryRows = sectorRows.results ?? [];
+    const completeness = historyCompleteness(sectorHistoryRows, Math.min(requestedDaysForTimeframe(timeframe), availableDays));
 
     return json({
       market,
       timeframe,
       limit,
-      coverage: buildHistoryCoverage(timeframe, availableDays),
-      sectors: groupSectorHistory(sectorRows.results ?? [], limit),
+      coverage: buildHistoryCoverage(timeframe, availableDays, completeness),
+      sectors: groupSectorHistory(sectorHistoryRows, limit),
       market_context: groupContextHistory(contextRows.results ?? [], limit),
       status: "ok",
     });
@@ -169,14 +179,55 @@ function boundedTimeframe(value: string | null): "30D" | "90D" | "180D" {
   return "90D";
 }
 
-export function buildHistoryCoverage(timeframe: "30D" | "90D" | "180D", availableSectorDays: number | null | undefined) {
+export function buildHistoryCoverage(
+  timeframe: "30D" | "90D" | "180D",
+  availableSectorDays: number | null | undefined,
+  completeness?: Partial<HistoryCompleteness>,
+) {
   const requestedDays = requestedDaysForTimeframe(timeframe);
   const availableDays = Math.max(0, Math.floor(Number(availableSectorDays) || 0));
   return {
-    requested_days: requestedDays,
     available_sector_days: availableDays,
+    complete_sector_days: completeness?.complete_sector_days ?? availableDays,
     effective_days: Math.min(requestedDays, availableDays),
     limited_by_data: availableDays < requestedDays,
+    max_sector_days: completeness?.max_sector_days ?? availableDays,
+    min_sector_days: completeness?.min_sector_days ?? availableDays,
+    missing_sector_codes: completeness?.missing_sector_codes ?? [],
+    requested_days: requestedDays,
+    sector_count: completeness?.sector_count ?? 0,
+  };
+}
+
+function historyCompleteness(rows: SectorHistoryRow[], targetDays: number): HistoryCompleteness {
+  const bySector = new Map<string, Set<string>>();
+  const byDate = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const sectorDates = bySector.get(row.sector_code) ?? new Set<string>();
+    sectorDates.add(row.date);
+    bySector.set(row.sector_code, sectorDates);
+
+    const dateSectors = byDate.get(row.date) ?? new Set<string>();
+    dateSectors.add(row.sector_code);
+    byDate.set(row.date, dateSectors);
+  }
+
+  const sectorCount = bySector.size;
+  const sectorDays = [...bySector.values()].map((dates) => dates.size);
+  const maxSectorDays = sectorDays.length ? Math.max(...sectorDays) : 0;
+  const minSectorDays = sectorDays.length ? Math.min(...sectorDays) : 0;
+  const completeSectorDays = [...byDate.values()].filter((sectors) => sectorCount > 0 && sectors.size === sectorCount).length;
+  const missingSectorCodes = [...bySector.entries()]
+    .filter(([, dates]) => dates.size < targetDays)
+    .map(([sectorCode]) => sectorCode)
+    .sort();
+
+  return {
+    complete_sector_days: completeSectorDays,
+    max_sector_days: maxSectorDays,
+    min_sector_days: minSectorDays,
+    missing_sector_codes: missingSectorCodes,
+    sector_count: sectorCount,
   };
 }
 

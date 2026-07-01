@@ -148,6 +148,8 @@ Rulebook 판단과 실제 결과 비교
   sector snapshot coverage
   sector history days
   market context coverage
+  evaluated 20D / 60D forward-label coverage
+  ready pattern count / thin pattern count
   30D / 90D / 180D replay readiness
   rulebook pattern diagnostics
   sample-observed 20D / 60D probability
@@ -166,10 +168,33 @@ sector_history_days == 0  -> 데이터 없음
 sector_history_days < 60  -> 표본 부족
 sector_history_days >= 60 and forward labels > 0 -> historical_ready
 validation.status == historical_ready -> pattern diagnostics 표시
-validation.expose_probability == true -> Layer 4에서 표본 관측 확률 표시
+validation.expose_probability == true -> Layer 4에서 ready pattern의 표본 관측 확률 표시
+pattern.status == thin_sample -> 표본 부족 상태 유지, 숫자 관측 확률 숨김
 ```
 
 Layer 4는 historical diagnostics를 분리하는 화면입니다. `historical_ready` 상태에서는 이력 진단을 완료 상태로 표시하고, `expose_probability = true`일 때 pattern별 positive forward-label 비율을 `표본 관측 확률`로 표시합니다. 이 값은 보정 완료 확률이 아니며 신뢰도 점수와 함께 해석해야 합니다.
+
+전역 `historical_ready`는 검증 입력이 연결됐다는 뜻이고, 모든 패턴의 표본이 충분하다는 뜻은 아닙니다. 각 pattern은 최소 20개 이상의 evaluated 20D forward label을 통과해야 `ready`가 되며, 그 미만은 `thin_sample`로 분리합니다.
+
+### 8.2 리포트 가드레일
+
+Layer 4 진단은 현재 화면 판단을 더 강하게 말하기 위한 장치가 아니라, 리포트 문구의 허용 범위를 정하는 장치입니다. 프론트는 현재 RS 리더, 모멘텀 선두, 주의 패턴을 `pattern_diagnostics`와 연결해 `ValidationReportGuardrail`을 파생합니다.
+
+```text
+ready + expose_probability=true
+  -> 표본 관측 확률과 신뢰도 병기 가능
+  -> caveat: 보정 완료 확률이 아니라 누적 표본 진단치
+
+ready + expose_probability=false
+  -> 이력 진단 완료만 표시
+  -> caveat: 관측치 표시는 forward label 확인 후 유지
+
+thin_sample / collecting / missing
+  -> 숫자 관측치 숨김
+  -> caveat: 표본 부족 또는 검증 전
+```
+
+Layer 4 결과 화면은 이 guardrail을 현재 판단 검증 연결과 패턴 진단 결과로 표시합니다. Layer 4 수집 화면은 같은 판단의 원천 이력, validation API 상태, replay coverage, 데이터 정합성을 별도로 보여줍니다. 이 정보는 섹터 리서치 보조 자료이며, 거래 지시나 개인화된 조언으로 표현하지 않습니다.
 
 정기 작업:
 

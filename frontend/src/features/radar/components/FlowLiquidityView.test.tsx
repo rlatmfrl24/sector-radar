@@ -72,25 +72,4 @@ describe("Layer 1 and Layer 2 split views", () => {
     expect(html).not.toContain("확인 체크리스트");
   });
 
-  it("replaces the Layer 1 dense dashboard with a separate beginner-friendly screen", () => {
-    const html = renderLayerOneView(true);
-
-    expect(html).toContain("쉬운 흐름 해설");
-    expect(html).toContain("Layer 1 쉬운 결론");
-    expect(html).toContain("지표 뜻");
-    expect(html).toContain("현재 해석");
-    expect(html).toContain("읽는 순서");
-    expect(html).toContain("지표 뜻과 현재 결과");
-    expect(html).toContain("Layer 1 분포");
-    expect(html).toContain("섹터 회전");
-    expect(html).toContain("내부 확산");
-    expect(html).toContain("좋은 점");
-    expect(html).toContain("확인할 점");
-    expect(html).toContain("시장 바람");
-    expect(html).toContain("변동성 압력");
-    expect(html).toContain("현재 결과");
-    expect(html).not.toContain("데이터 수집 지도");
-    expect(html).not.toContain("근거와 확인 지점");
-    expect(html).not.toContain("마켓 컨텍스트");
-  });
 });

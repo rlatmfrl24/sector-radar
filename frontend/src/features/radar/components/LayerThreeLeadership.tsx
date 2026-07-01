@@ -1,6 +1,12 @@
 import { ArrowRight, Database } from "lucide-react";
 
-import type { HistoryResponse, HistoryTimeframe, SectorSnapshot, ValidationResponse } from "../../../types";
+import type {
+  HistoryResponse,
+  HistoryTimeframe,
+  LeadershipReconciliation,
+  SectorSnapshot,
+  ValidationResponse,
+} from "../../../types";
 import {
   clamp,
   directionLabel,
@@ -17,11 +23,14 @@ const RRG_MIN_POS = 12;
 const RRG_MAX_POS = 88;
 const RRG_X_SCALE = 4.8;
 const RRG_Y_SCALE = 7.4;
+const MOVEMENT_X_START = 3;
+const MOVEMENT_X_END = 97;
 
 export function LayerThreeLeadership({
   currentLeader,
   history,
   historyTimeframe,
+  leadershipReconciliation,
   momentumLeader,
   onSelect,
   onHistoryTimeframeChange,
@@ -34,6 +43,7 @@ export function LayerThreeLeadership({
   currentLeader?: SectorSnapshot;
   history: HistoryResponse | null;
   historyTimeframe: HistoryTimeframe;
+  leadershipReconciliation?: LeadershipReconciliation;
   momentumLeader?: SectorSnapshot;
   onSelect: (sectorCode: string) => void;
   onHistoryTimeframeChange: (timeframe: HistoryTimeframe) => void;
@@ -51,8 +61,15 @@ export function LayerThreeLeadership({
         meta={`${sectors.length} sector snapshots`}
         title="리더십 상세"
       />
-      <TimeframeSelector active={historyTimeframe} history={history} onChange={onHistoryTimeframeChange} />
-      <LeadershipFlowStrip currentLeader={currentLeader} momentumLeader={momentumLeader} selected={selected} />
+      <div className="leadership-top-strip">
+        <TimeframeSelector active={historyTimeframe} history={history} onChange={onHistoryTimeframeChange} />
+        <LeadershipFlowStrip
+          currentLeader={currentLeader}
+          leadershipReconciliation={leadershipReconciliation}
+          momentumLeader={momentumLeader}
+          selected={selected}
+        />
+      </div>
       <section className="leadership-workspace" aria-label="leadership dashboard">
         <SectorRail
           momentumLeader={momentumLeader}
@@ -85,18 +102,22 @@ export function LayerThreeLeadership({
 
 function LeadershipFlowStrip({
   currentLeader,
+  leadershipReconciliation,
   momentumLeader,
   selected,
 }: {
   currentLeader?: SectorSnapshot;
+  leadershipReconciliation?: LeadershipReconciliation;
   momentumLeader?: SectorSnapshot;
   selected: SectorSnapshot;
 }) {
   const sameLeader =
     Boolean(currentLeader && momentumLeader && currentLeader.sector_code === momentumLeader.sector_code);
-  const message = sameLeader
-    ? "현재 RS 리더와 모멘텀 선두가 일치합니다."
-    : "기존 리더와 모멘텀 선두가 달라 전환 관찰 구간입니다.";
+  const message =
+    leadershipReconciliation?.narrative ??
+    (sameLeader
+      ? "현재 RS 리더와 모멘텀 선두가 일치합니다."
+      : "기존 리더와 모멘텀 선두가 달라 전환 관찰 구간입니다.");
   const selectedText = `${selected.sector_code} 기준으로 현재 리더 상태와 약화 여부를 보여줍니다.`;
 
   return (
@@ -319,13 +340,13 @@ function RrgMovementChart({
         <div className="movement-chart" aria-label={`${selectedCode} 상대강도와 모멘텀 시간 경로`}>
           {validTrail.length > 1 ? (
             <svg viewBox="0 0 100 56" preserveAspectRatio="none" role="img">
-              <line className="movement-grid top" x1="0" x2="100" y1="10" y2="10" />
-              <line className="movement-grid mid" x1="0" x2="100" y1={movementY(100, domain)} y2={movementY(100, domain)} />
-              <line className="movement-grid bottom" x1="0" x2="100" y1="46" y2="46" />
+              <line className="movement-grid top" x1={MOVEMENT_X_START} x2={MOVEMENT_X_END} y1="10" y2="10" />
+              <line className="movement-grid mid" x1={MOVEMENT_X_START} x2={MOVEMENT_X_END} y1={movementY(100, domain)} y2={movementY(100, domain)} />
+              <line className="movement-grid bottom" x1={MOVEMENT_X_START} x2={MOVEMENT_X_END} y1="46" y2="46" />
               <path className="movement-line ratio" d={ratioPath} vectorEffect="non-scaling-stroke" />
               <path className="movement-line momentum" d={momentumPath} vectorEffect="non-scaling-stroke" />
-              <circle className="movement-end ratio" cx="100" cy={movementY(ratioSeries.at(-1)?.value ?? 100, domain)} r="1.6" />
-              <circle className="movement-end momentum" cx="100" cy={movementY(momentumSeries.at(-1)?.value ?? 100, domain)} r="1.6" />
+              <circle className="movement-end ratio" cx={MOVEMENT_X_END} cy={movementY(ratioSeries.at(-1)?.value ?? 100, domain)} r="1.6" />
+              <circle className="movement-end momentum" cx={MOVEMENT_X_END} cy={movementY(momentumSeries.at(-1)?.value ?? 100, domain)} r="1.6" />
             </svg>
           ) : (
             <div className="movement-empty">히스토리 누적 후 경로 무빙 표시</div>
@@ -360,7 +381,7 @@ function buildMovementPath(points: Array<{ value: number }>, domain: { min: numb
   const denominator = Math.max(1, points.length - 1);
   return points
     .map((point, index) => {
-      const x = (100 * index) / denominator;
+      const x = MOVEMENT_X_START + ((MOVEMENT_X_END - MOVEMENT_X_START) * index) / denominator;
       const y = movementY(point.value, domain);
       return `${index === 0 ? "M" : "L"} ${roundPathPoint(x)} ${roundPathPoint(y)}`;
     })

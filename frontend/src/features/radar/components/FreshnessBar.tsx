@@ -10,15 +10,17 @@ import type {
   SourceFreshnessProvider,
   ValidationResponse,
 } from "../../../types";
-import type { RadarView } from "../model";
+import type { RadarLayerView } from "../model";
 
 export function FreshnessBar({
   activeView = "layer1",
   data,
+  embedded = false,
   initialExpanded = false,
 }: {
-  activeView?: RadarView;
+  activeView?: RadarLayerView;
   data: SectorsResponse;
+  embedded?: boolean;
   initialExpanded?: boolean;
 }) {
   const [expanded, setExpanded] = useState(initialExpanded);
@@ -33,7 +35,7 @@ export function FreshnessBar({
   const scopeLabel = freshnessScopeLabel(activeView);
 
   return (
-    <section className={`freshness-bar ${expanded ? "expanded" : ""}`} aria-label="provider freshness">
+    <section className={`freshness-bar ${expanded ? "expanded" : ""} ${embedded ? "embedded" : ""}`} aria-label="provider freshness">
       <div className="freshness-summary">
         <div className="freshness-head">
           <Database size={14} />
@@ -78,10 +80,12 @@ export function FreshnessBar({
 export function ContextRail({
   activeView = "layer1",
   data,
+  embedded = false,
   validation,
 }: {
-  activeView?: RadarView;
+  activeView?: RadarLayerView;
   data: SectorsResponse;
+  embedded?: boolean;
   validation?: ValidationResponse | null;
 }) {
   const activeContext = (data.market_context ?? []).filter((card) => card.source_class !== "held" && card.source_class !== "manual");
@@ -89,7 +93,7 @@ export function ContextRail({
   const rail = contextRailItems(data, activeView, activeContext.length, officialCount, validation);
 
   return (
-    <section className="context-rail" aria-label="analysis flow">
+    <section className={`context-rail ${embedded ? "embedded" : ""}`} aria-label="analysis flow">
       {rail.items.map((item, index) => (
         <RailSegment item={item} key={item.label} showDivider={index < rail.items.length - 1} />
       ))}
@@ -269,7 +273,7 @@ function groupFreshness(items: SourceFreshnessItem[]) {
 function providerEntries(
   connections: DataConnections,
   activeFreshness: SourceFreshnessItem[],
-  activeView: RadarView,
+  activeView: RadarLayerView,
 ) {
   const providersWithActiveRows = new Set(activeFreshness.map((item) => item.provider));
   const entries = Object.entries(connections) as Array<[SourceFreshnessProvider, DataConnection]>;
@@ -287,7 +291,7 @@ function isActiveFreshness(item: SourceFreshnessItem) {
 function scopedFreshnessItems(
   data: SectorsResponse,
   freshness: SourceFreshnessItem[],
-  activeView: RadarView,
+  activeView: RadarLayerView,
 ) {
   const scoped = freshness.filter((item) => sourceFreshnessMatchesView(item, activeView));
   if (activeView === "layer1") {
@@ -296,7 +300,7 @@ function scopedFreshnessItems(
   return scoped;
 }
 
-function sourceFreshnessMatchesView(item: SourceFreshnessItem, activeView: RadarView) {
+function sourceFreshnessMatchesView(item: SourceFreshnessItem, activeView: RadarLayerView) {
   if (activeView === "layer1") {
     return item.provider === "yahoo_finance" && (item.id.startsWith("provider:") || item.id.startsWith("snapshot:"));
   }
@@ -347,13 +351,13 @@ function mergeFreshness(base: SourceFreshnessItem[], extra: SourceFreshnessItem[
   return [...byId.values()];
 }
 
-function fallbackProvidersForView(activeView: RadarView) {
+function fallbackProvidersForView(activeView: RadarLayerView) {
   if (activeView === "validation") return new Set<SourceFreshnessProvider>(["yahoo_finance", "fred"]);
   if (activeView === "layer2") return new Set<SourceFreshnessProvider>(["yahoo_finance", "fred", "krx_openapi"]);
   return new Set<SourceFreshnessProvider>(["yahoo_finance"]);
 }
 
-function freshnessScopeLabel(activeView: RadarView) {
+function freshnessScopeLabel(activeView: RadarLayerView) {
   if (activeView === "layer1") return "Layer 1";
   if (activeView === "layer2") return "Layer 2";
   if (activeView === "validation") return "Layer 4";
@@ -362,7 +366,7 @@ function freshnessScopeLabel(activeView: RadarView) {
 
 function contextRailItems(
   data: SectorsResponse,
-  activeView: RadarView,
+  activeView: RadarLayerView,
   activeContextCount: number,
   officialCount: number,
   validation?: ValidationResponse | null,
@@ -373,6 +377,7 @@ function contextRailItems(
 
   if (activeView === "layer1") {
     const flow = data.layer1_flow;
+    const qualitySuffix = qualityNarrativeSuffix(data, "layer1");
     return {
       items: [
         { icon: "activity" as const, label: "Market Tape", value: flow ? layerOneStateLabel(flow.state) : "pending" },
@@ -385,8 +390,7 @@ function contextRailItems(
         { icon: "shield" as const, label: "검증", value: validationValue },
       ],
       narrative:
-        flow?.narrative ??
-        "Layer 1은 가격 흐름, 섹터 breadth, 변동성 압력을 별도 화면에서 확인합니다.",
+        `${flow?.narrative ?? "Layer 1은 가격 흐름, 섹터 breadth, 변동성 압력을 별도 화면에서 확인합니다."}${qualitySuffix}`,
     };
   }
 
@@ -394,6 +398,7 @@ function contextRailItems(
     const fired = (data.watchlist ?? []).filter((item) => item.status === "fired").length;
     const accumulation = data.sectors.filter((sector) => sector.modules.participation.state === "accumulation").length;
     const distribution = data.sectors.filter((sector) => sector.modules.participation.state === "distribution").length;
+    const qualitySuffix = qualityNarrativeSuffix(data, "layer2");
     return {
       items: [
         { icon: "activity" as const, label: "Market Context", value: `공식 ${officialCount}/${activeContextCount}` },
@@ -402,8 +407,7 @@ function contextRailItems(
         { icon: "shield" as const, label: "검증", value: validationValue },
       ],
       narrative:
-        reconciliation?.narrative ??
-        "Layer 2는 유동성 컨텍스트, ETF 참여도, 리스크 트리거를 별도 화면에서 확인합니다.",
+        `${reconciliation?.narrative ?? "Layer 2는 유동성 컨텍스트, ETF 참여도, 리스크 트리거를 별도 화면에서 확인합니다."}${qualitySuffix}`,
     };
   }
 
@@ -413,6 +417,7 @@ function contextRailItems(
     const replayTotal = validation?.replay_windows?.length ?? 0;
     const patternReady = validation?.pattern_diagnostics?.filter((item) => item.status === "ready").length ?? 0;
     const patternTotal = validation?.pattern_diagnostics?.length ?? 0;
+    const thinPatterns = validation?.coverage.thin_pattern_count ?? 0;
     return {
       items: [
         { icon: "shield" as const, label: "검증", value: validationValue },
@@ -430,7 +435,7 @@ function contextRailItems(
       ],
       narrative:
         validation?.status === "historical_ready"
-          ? `Layer 4는 ${validation.coverage.sector_history_days}일 이력으로 패턴 진단과 표본 관측 확률을 신뢰도와 함께 표시 중입니다.`
+          ? `Layer 4는 ${validation.coverage.sector_history_days}일 이력으로 패턴 진단과 표본 관측 확률을 신뢰도와 함께 표시 중입니다.${thinPatterns ? ` thin sample ${thinPatterns}개는 분리합니다.` : ""}`
           : contextDays > 0
             ? "Layer 4는 sector snapshot, history, market context coverage를 분리해 확인합니다."
             : "Layer 4는 검증 입력과 replay 가능 범위를 분리해 확인합니다.",
@@ -450,9 +455,16 @@ function contextRailItems(
     ],
     narrative:
       concentration?.effective_sector_count
-        ? `effective sectors ${concentration.effective_sector_count.toFixed(1)} · RS 기반 집중도 보조 추정`
-        : "concentration pending",
+        ? `effective sectors ${concentration.effective_sector_count.toFixed(1)} · RS 기반 집중도 보조 추정${qualityNarrativeSuffix(data, "layer3")}`
+        : `concentration pending${qualityNarrativeSuffix(data, "layer3")}`,
   };
+}
+
+function qualityNarrativeSuffix(data: SectorsResponse, layer: "layer1" | "layer2" | "layer3") {
+  const quality = data.data_quality?.layers[layer];
+  const issueCount = quality?.issues.filter((issue) => issue.severity !== "info").length ?? 0;
+  if (!quality || issueCount === 0) return "";
+  return ` 데이터 정합성 확인 ${issueCount}개가 있습니다.`;
 }
 
 function validationRailValue(validation: ValidationResponse | null | undefined, fallbackExposeProbability: boolean) {

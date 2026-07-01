@@ -78,16 +78,19 @@ Top-level layout:
 ```text
 dashboard-shell
   dashboard-topbar
+    Layer tabs: 흐름 / 여력 / 리더십 / 검증
+    Surface switch: 결과 / 수집
   view-workspace
-    FreshnessBar
-    ContextRail
-    active Layer screen
+    result mode: active Layer analysis screen
+    collection mode: active Layer collection screen
 ```
 
 Desktop:
 
 - Shell uses `100dvh`.
 - Topbar stays compact.
+- `결과` mode keeps the active Layer analysis screen focused on judgment and evidence.
+- `수집` mode replaces the active Layer body with source freshness, source details, status rail, and data quality.
 - Only the active screen scrolls.
 - Layer 3 uses a three-zone workspace: momentum rail, RRG/treemap analysis, selected inspector.
 
@@ -110,6 +113,30 @@ Mobile/tablet:
 
 Tabs are compact segmented controls. Do not return to `주도·섹터`; that label conflates current RS leadership and momentum leadership.
 
+### Result / Collection Switch
+
+Each top Layer tab has two surfaces:
+
+```text
+결과: 판단, 차트, 테이블, 검증 결과
+수집: 수집원 요약, 수집원 상세, 레이어 상태, 데이터 정합성
+```
+
+This is not a separate global collection tab. `Layer 3 + 수집` shows Layer 3 collection data; `Layer 3 + 결과` returns to the leadership analysis screen.
+
+### LayerDataContextSection
+
+Collection screens place source freshness, source details, layer status, and data quality inside one section:
+
+```text
+레이어 수집 데이터
+  수집원 요약 / 상세
+  레이어 상태
+  데이터 정합성
+```
+
+Each layer only shows its own source scope. This section is the collection-mode body, not a card attached above the result screen.
+
 ### FreshnessBar
 
 Shows provider state and expandable source rows scoped to the active Layer.
@@ -123,7 +150,7 @@ Layer 4: sector snapshots, Yahoo sector history, FRED/context coverage
 
 ### ContextRail
 
-Compact status rail under the freshness bar:
+Compact status rail embedded inside the collection screen:
 
 ```text
 Layer 1: Market Tape / Breadth / Risk-Vol / 검증
@@ -132,9 +159,28 @@ Layer 3: RS 리더 / 순환 후보 / Reconciliation / 검증
 Layer 4: 검증 / Replay / Coverage / 표본 관측 확률
 ```
 
+If a layer has non-info `data_quality` issues, the rail narrative appends a short data-consistency note. It does not replace the layer-specific freshness rows.
+
+### Data Quality Strip
+
+Each active layer shows `데이터 정합성` inside its collection screen, not as a repeated card inside the result layer body. This strip is not a scorecard and must not average investment signals. It only summarizes data readiness:
+
+```text
+complete: required inputs and dates are aligned
+partial: usable but some official/context/helper inputs are incomplete
+stale: source freshness or endpoint as_of dates need review
+blocked: required inputs are missing
+```
+
 ### Layer 3 Leadership Flow
 
-Use a thin bridge strip:
+Use a compact top strip that places the RRG path selector and leadership bridge on the same row on desktop:
+
+```text
+RRG 경로 selector | 현재 RS 리더 -> 모멘텀 선두 -> alignment note
+```
+
+The leadership bridge itself remains:
 
 ```text
 현재 RS 리더 -> 모멘텀 선두 -> alignment note
@@ -165,22 +211,26 @@ validation status
 Layer 4 is a historical diagnostics and sample-observed probability screen, not a forecasting or recommendation screen.
 
 ```text
-통합 검증 요약
+컴팩트 검증 요약
   데이터 수집 / Replay / 패턴 진단 / 표본 관측치
   Replay 30D / 90D / 180D coverage
   history coverage / context coverage
-가로형 pattern diagnostics chart
+pattern diagnostics matrix
 데이터 제한이 있을 때만 data limits
 ```
 
-Show the four steps inside one overview card: 데이터 수집, Replay, 패턴 진단, 표본 관측치. Replay availability belongs inside the Replay status cell, not as a separate card. Use `이력 진단 완료`, `Replay 가능`, `패턴 진단 완료`, `표본 확률 표시`, `표본 확률 대기` as status language. Use `데이터 제한` only for real blockers such as missing history or unavailable validation data. Do not visualize the value as a forecast gauge; show it as horizontal pattern diagnostics with reliability.
+Show the four steps inside one compact overview strip: 데이터 수집, Replay, 패턴 진단, 표본 관측치. Replay availability belongs inside the Replay status cell, not as a separate card. Use `이력 진단 완료`, `Replay 가능`, `패턴 진단 완료`, `표본 확률 표시`, `표본 확률 대기` as status language. Use `데이터 제한` only for real blockers such as missing history or unavailable validation data. Do not visualize the value as a forecast gauge; show diagnostics as a matrix with heat cells, signed center-axis markers, and reliability.
+
+Pattern diagnostics must gate probability-like values per pattern. If the global validation status is ready but a pattern is `thin_sample`, show `표본 부족` and the quality warning instead of a numeric observed probability.
+
+Layer 4 also shows a compact `현재 판단 검증 연결` strip. It maps the current RS leader, momentum leader, and warning patterns to the available pattern diagnostics so the report caveat is visible before reading the full matrix.
 
 ## 7. Interaction Rules
 
 - Clickable sector rows, RRG dots, and treemap tiles all update the selected sector.
 - Layer 3 default selected sector follows Layer 1 current RS leader.
 - Momentum rail sorting follows `rs_momentum desc, rs_ratio desc`.
-- Easy mode toggle appears only on Layer 1.
+- `결과 / 수집` switch appears on Layer 1~4 and swaps the current Layer body.
 - Manual refresh respects provider gate; do not imply public Pages can force refresh.
 
 ## 8. Copy Rules
@@ -197,6 +247,8 @@ Use:
 표본 관측 확률
 신뢰도
 리서치 관점
+리포트 문장
+현재 판단 검증 연결
 ```
 
 Avoid:
@@ -220,7 +272,8 @@ Before shipping UI changes:
 [ ] npm run test:app
 [ ] npm run build
 [ ] Layer 1/2/3/4 tabs render
-[ ] FreshnessBar scopes source rows by active Layer
+[ ] `결과 / 수집` switch works on Layer 1/2/3/4
+[ ] Collection screens scope source rows by active Layer
 [ ] Layer 3 separates current RS leader and momentum leader
 [ ] Layer 4 shows validation coverage, sample-observed probability, and reliability without recommendation wording
 [ ] No console errors in browser smoke test
