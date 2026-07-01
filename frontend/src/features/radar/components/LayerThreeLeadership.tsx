@@ -339,7 +339,7 @@ function RrgMovementChart({
         </div>
         <div className="movement-chart" aria-label={`${selectedCode} 상대강도와 모멘텀 시간 경로`}>
           {validTrail.length > 1 ? (
-            <svg viewBox="0 0 100 56" preserveAspectRatio="none" role="img">
+            <svg viewBox="0 0 100 56" preserveAspectRatio="xMidYMid meet" role="img">
               <line className="movement-grid top" x1={MOVEMENT_X_START} x2={MOVEMENT_X_END} y1="10" y2="10" />
               <line className="movement-grid mid" x1={MOVEMENT_X_START} x2={MOVEMENT_X_END} y1={movementY(100, domain)} y2={movementY(100, domain)} />
               <line className="movement-grid bottom" x1={MOVEMENT_X_START} x2={MOVEMENT_X_END} y1="46" y2="46" />

@@ -152,8 +152,10 @@ describe("LayerThreeLeadership", () => {
     expect(html).toContain("SMH 기준으로 현재 리더 상태와 약화 여부를 보여줍니다.");
     expect(html).toContain("Layer 1의 현재 RS 리더입니다. 모멘텀 선두는 XLV로 분리됩니다.");
     expect(html).toContain("모멘텀 선두 후보");
+    expect(html).toContain('preserveAspectRatio="xMidYMid meet"');
     expect(html).toContain('cx="97"');
     expect(html).not.toContain('cx="100"');
+    expect(html).not.toContain('preserveAspectRatio="none"');
     expect(html).not.toContain("Selected Sector");
   });
 });
